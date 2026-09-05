@@ -54,9 +54,11 @@
           . Dropdowns slide open/closed with a rotating chevron.
           . Checkboxes fill from the CENTER outward (anchored center),
             not sweeping in from the left.
-          . Color popup fades in when opened and fades out on close.
-          . Groupboxes fade out when collapsed and fade back in when
-            expanded.
+          . Color popup slides in when opened and slides out on close.
+          . Groupboxes slide their content before collapsing/expanding.
+          NOTE: all of these animations only tweak Position/Size/Color3/
+          Rotation/TextColor3 — universally tweenable properties. No
+          GroupTransparency anywhere (some environments choke on it).
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -493,15 +495,17 @@ function Library:CreateWindow(title, opts)
         tweenTo(ColorPopupClose, { TextColor3 = Theme.SubText }, 0.1)
     end)
 
-    -- fade the popup out instead of hard-hiding it (item 19)
+    -- slide the popup out (Position tween — universally safe) instead of
+    -- hard-hiding it; a guard flag stops a quick reopen from getting hidden
     local function closeColorPopup()
         popupClosing = true
-        tweenTo(ColorPopup, { GroupTransparency = 1 }, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local cur = ColorPopup.Position
+        tweenTo(ColorPopup, {
+            Position = UDim2.new(cur.X.Scale, cur.X.Offset + 8, cur.Y.Scale, cur.Y.Offset),
+        }, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
         task.delay(0.12, function()
             if popupClosing then
                 ColorPopup.Visible = false
-                ColorPopup.GroupTransparency = 0
-                popupClosing = false
             end
         end)
     end
@@ -624,11 +628,17 @@ function Library:CreateWindow(title, opts)
         if nearPos then
             ColorPopup.Position = UDim2.new(0, nearPos.X + 16, 0, math.max(0, nearPos.Y - 60))
         end
-        -- fade in (item 19); also cancels a pending close so it can't hide us
+
+        -- slide in from +8px to the right (item 19); also cancels any
+        -- pending close so it can't hide us mid-animation
         popupClosing = false
-        ColorPopup.GroupTransparency = 1
         ColorPopup.Visible = true
-        tweenTo(ColorPopup, { GroupTransparency = 0 }, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local px = ColorPopup.Position.X.Offset + 8
+        local py = ColorPopup.Position.Y.Offset
+        ColorPopup.Position = UDim2.new(0, px, 0, py)
+        tweenTo(ColorPopup, {
+            Position = UDim2.new(0, px - 8, 0, py),
+        }, 0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     end
 
 
@@ -1159,23 +1169,23 @@ function Library:CreateWindow(title, opts)
             end
             applyCollapsed()
 
-            -- fade the content out/in (item 19) instead of hard-hiding it.
-            -- Hidden = invisible also makes AutomaticSize drop it, so the
-            -- box shrinks back to just the header like before.
+            -- slide the content down before collapsing, and back up on open
+            -- (item 19). Only Position is tweened — always safe. Hiding the
+            -- frame also makes AutomaticSize drop it, shrinking the box.
             CollapseBtn.MouseButton1Click:Connect(function()
                 collapsed = not collapsed
                 if collapsed then
-                    tweenTo(Content, { GroupTransparency = 1 }, 0.12)
-                    task.delay(0.12, function()
+                    tweenTo(Content, { Position = UDim2.new(0, 0, 0, 24) }, 0.1)
+                    task.delay(0.1, function()
                         if collapsed then
                             Content.Visible = false
-                            Content.GroupTransparency = 0
+                            Content.Position = UDim2.new(0, 0, 0, 16)
                         end
                     end)
                 else
-                    Content.GroupTransparency = 1
+                    Content.Position = UDim2.new(0, 0, 0, 24)
                     Content.Visible = true
-                    tweenTo(Content, { GroupTransparency = 0 }, 0.14)
+                    tweenTo(Content, { Position = UDim2.new(0, 0, 0, 16) }, 0.14)
                 end
                 CollapseBtn.Text = collapsed and "+" or "-"
             end)

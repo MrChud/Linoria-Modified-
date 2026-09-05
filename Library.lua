@@ -332,7 +332,7 @@ function Library:CreateWindow(title, opts)
     })
 
 
-    -- game name (item 15): risky RED text, top-right of the header —
+    -- game name (item 15): risky RED text, top-right of the header --
     -- pass opts.GameName to CreateWindow
     if opts.GameName and opts.GameName ~= "" then
         local gnSize = TextService:GetTextSize(opts.GameName, 12, FONT_BOLD, Vector2.new(1000, 20))
@@ -414,7 +414,7 @@ function Library:CreateWindow(title, opts)
 
     -- single accent indicator (item 18/19): slides between tab buttons,
     -- sits at the TOP of the active one, updates live with accent color.
-    -- It's a DIRECT child of TabRow so the tab layout can't touch it —
+    -- It's a DIRECT child of TabRow so the tab layout can't touch it --
     -- putting it inside the layout is what pinned it to the left.
     local TabIndicator = new("Frame", {
         Name = "TabIndicator",
@@ -495,7 +495,7 @@ function Library:CreateWindow(title, opts)
         tweenTo(ColorPopupClose, { TextColor3 = Theme.SubText }, 0.1)
     end)
 
-    -- slide the popup out (Position tween — universally safe) instead of
+    -- slide the popup out (Position tween -- universally safe) instead of
     -- hard-hiding it; a guard flag stops a quick reopen from getting hidden
     local function closeColorPopup()
         popupClosing = true
@@ -513,7 +513,7 @@ function Library:CreateWindow(title, opts)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
 
-    -- step 1: the saturation/value square — drag here after picking a hue
+    -- step 1: the saturation/value square -- drag here after picking a hue
     local SVSquare = new("Frame", {
         Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 130),
         BackgroundColor3 = Color3.fromHSV(0, 1, 1), BorderSizePixel = 1, BorderColor3 = Theme.Border,
@@ -549,7 +549,7 @@ function Library:CreateWindow(title, opts)
     end
 
 
-    -- step 2: hue slider — pick this FIRST, it sets the square's base color
+    -- step 2: hue slider -- pick this FIRST, it sets the square's base color
     local HueHolder = new("Frame", {
         Position = UDim2.new(0, 8, 0, 158), Size = UDim2.new(1, -16, 0, 12),
         BackgroundTransparency = 1, ZIndex = 51, Parent = ColorPopup,
@@ -673,7 +673,7 @@ function Library:CreateWindow(title, opts)
 
     function Window:CreateTab(name)
         -- tabs measure their actual text with TextService instead of
-        -- guessing "#name * 8" — that guess was off for anything that
+        -- guessing "#name * 8" -- that guess was off for anything that
         -- wasn't short/plain text.
         local measured = TextService:GetTextSize(name, 13, FONT, Vector2.new(1000, 20))
         local TabBtn = new("TextButton", {
@@ -790,7 +790,7 @@ function Library:CreateWindow(title, opts)
                     BackgroundColor3 = Theme.Track, Parent = Row,
                 })
                 -- FILLED square when toggled on (item 13); the fill grows from
-                -- the CENTER outward (item 19) — anchored center so scaling
+                -- the CENTER outward (item 19) -- anchored center so scaling
                 -- the size expands evenly around the middle
                 local Fill = new("Frame", {
                     AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1001,7 +1001,7 @@ function Library:CreateWindow(title, opts)
 
 
             -- plain bindable key for YOUR OWN features. Does not affect the
-            -- menu's own show/hide key — use AddMenuKeybind for that.
+            -- menu's own show/hide key -- use AddMenuKeybind for that.
             function E:AddKeybind(text, default, callback, risky)
                 local key = default or Enum.KeyCode.Unknown
                 local listening = false
@@ -1170,13 +1170,13 @@ function Library:CreateWindow(title, opts)
             applyCollapsed()
 
             -- slide the content down before collapsing, and back up on open
-            -- (item 19). Only Position is tweened — always safe. Hiding the
+            -- (item 19). Only Position is tweened -- always safe. Hiding the
             -- frame also makes AutomaticSize drop it, shrinking the box.
             CollapseBtn.MouseButton1Click:Connect(function()
                 collapsed = not collapsed
                 if collapsed then
-                    tweenTo(Content, { Position = UDim2.new(0, 0, 0, 24) }, 0.1)
-                    task.delay(0.1, function()
+                    tweenTo(Content, { Position = UDim2.new(0, 0, 0, 24) }, 0.2)
+                    task.delay(0.2, function()
                         if collapsed then
                             Content.Visible = false
                             Content.Position = UDim2.new(0, 0, 0, 16)
@@ -1185,7 +1185,7 @@ function Library:CreateWindow(title, opts)
                 else
                     Content.Position = UDim2.new(0, 0, 0, 24)
                     Content.Visible = true
-                    tweenTo(Content, { Position = UDim2.new(0, 0, 0, 16) }, 0.14)
+                    tweenTo(Content, { Position = UDim2.new(0, 0, 0, 16) }, 0.2)
                 end
                 CollapseBtn.Text = collapsed and "+" or "-"
             end)

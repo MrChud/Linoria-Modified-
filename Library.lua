@@ -25,15 +25,17 @@
        if you call Window:SetAccentColor().
     9. Window is now resizable via a grip in the bottom-right corner
        (min size 300x220), on top of the title-bar drag.
-    10. Dropdowns (AddCombo) restyled to match the rest of the menu:
-        bordered box, hover/open states, accent border while open,
-        accent selection bar + highlighted row on the selected option.
+    10. Dropdowns (AddCombo) restyled to match the rest of the menu;
+        they get an accent outline while open, and the blue accent bar
+        on the list follows your selection (fixed the loop-var bug that
+        made every click stick to one option).
     11. SV cursor in the color popup is a small circle with a soft white
         glow halo.
     12. Columns are scrolling frames — when the window is resized too
         small, content is clipped instead of sticking out below the
         menu, and you can scroll down to reach the rest.
     13. Checkbox fills completely with the accent color when toggled on.
+    14. Top tabs are right-aligned.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -348,8 +350,11 @@ function Library:CreateWindow(title, opts)
         BackgroundColor3 = Theme.Header, Parent = Main,
     })
     new("UIListLayout", {
-        FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 2),
-        SortOrder = Enum.SortOrder.LayoutOrder, Parent = TabRow,
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right, -- item 14: tabs move to the right
+        Padding = UDim.new(0, 2),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = TabRow,
     })
     pad(TabRow, 2, 2)
 
@@ -717,8 +722,9 @@ function Library:CreateWindow(title, opts)
             end
 
 
-            -- dropdown (item 10): bordered track box, header-bg on hover,
-            -- accent border/chevron while open, accent bar on the selected row
+            -- dropdown (item 10): bordered track box, accent outline while
+            -- open, and the blue accent bar + highlight follows your
+            -- selection (fixed: option loop-var bug + immediate refresh)
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
@@ -743,7 +749,7 @@ function Library:CreateWindow(title, opts)
                     TextXAlignment = Enum.TextXAlignment.Left, Parent = Btn,
                 })
                 local Chevron = new("TextLabel", {
-                    Text = "▾", Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
+                    Text = "▼", Font = FONT, TextSize = 11, TextColor3 = Theme.SubText,
                     BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
                     Parent = Btn,
                 })
@@ -763,6 +769,7 @@ function Library:CreateWindow(title, opts)
 
                 local optionsUi = {}
                 for _, opt in ipairs(options) do
+                    local option = opt -- fresh local per iteration (fixes shared loop-var bug)
                     local OptBtn = panel({
                         Size = UDim2.new(1, 0, 0, 15), BackgroundColor3 = Theme.Panel,
                         BorderColor3 = Theme.Border, Parent = List,
@@ -773,18 +780,19 @@ function Library:CreateWindow(title, opts)
                     })
                     onAccent(function(c) Bar.BackgroundColor3 = c end)
                     local OptLbl = new("TextLabel", {
-                        Text = tostring(opt), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
+                        Text = tostring(option), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
                         BackgroundTransparency = 1, Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(1, -12, 1, 0),
                         TextXAlignment = Enum.TextXAlignment.Left, Parent = OptBtn,
                     })
                     local OptClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = OptBtn })
                     OptClick.MouseButton1Click:Connect(function()
-                        selected = opt
-                        BtnLbl.Text = tostring(opt)
-                        if callback then callback(opt) end
+                        selected = option
+                        BtnLbl.Text = tostring(selected)
+                        refreshSelected()
+                        if callback then callback(selected) end
                         setOpen(false)
                     end)
-                    table.insert(optionsUi, { opt = opt, btn = OptBtn, bar = Bar, lbl = OptLbl })
+                    table.insert(optionsUi, { opt = option, btn = OptBtn, bar = Bar, lbl = OptLbl })
                 end
 
                 local function refreshSelected()
@@ -800,10 +808,10 @@ function Library:CreateWindow(title, opts)
                     open = v
                     local listH = #options * 15 + math.max(0, #options - 1) * 1
                     Holder.Size = open and UDim2.new(1, 0, 0, 33 + listH) or UDim2.new(1, 0, 0, 32)
-                    Chevron.Text = open and "▴" or "▾"
+                    Chevron.Text = open and "▲" or "▼"
                     Chevron.TextColor3 = open and Theme.Accent or Theme.SubText
                     Btn.BackgroundColor3 = open and Theme.Header or Theme.Track
-                    Btn.BorderColor3 = open and Theme.Accent or Theme.Border
+                    Btn.BorderColor3 = open and Theme.Accent or Theme.Border -- accent outline while open
                     if open then refreshSelected() end
                 end
                 BtnClick.MouseButton1Click:Connect(function() setOpen(not open) end)

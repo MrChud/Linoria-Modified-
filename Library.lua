@@ -1,5 +1,5 @@
---[[    ModernUI Library — old/plain cheat-menu skin (polish pass)
-
+--[[
+    ModernUI Library — old/plain cheat-menu skin (polish pass)
 
     Changelog vs previous version:
     1. More visible borders everywhere (brighter border color + outlined
@@ -39,8 +39,9 @@
         the header.
     17. No X button in the window header (pointless since the menu key
         toggles it). The color picker popup DOES keep its X.
-    18. A tiny accent-colored line sits under every groupbox title and on
-        top of the tab row, both updating live with the accent color.
+    18. A tiny accent-colored line sits under every groupbox title, and a
+        matching one sits at the TOP of the ACTIVE tab button (not across
+        the whole tab row), both updating live with the accent color.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -115,7 +116,6 @@ end
 local function labelColor(risky)
     return risky and Theme.Risky or Theme.Text
 end
-
 
 local function hoverFlash(btn, onColor, offColor, propName)
     propName = propName or "TextColor3"
@@ -364,12 +364,6 @@ function Library:CreateWindow(title, opts)
         Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 20),
         BackgroundColor3 = Theme.Header, Parent = Main,
     })
-    -- tiny accent line (item 18) on the TOP of the tabs
-    local TabTopLine = new("Frame", {
-        Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 0, 0),
-        BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, ZIndex = 2, Parent = TabRow,
-    })
-    onAccent(function(c) TabTopLine.BackgroundColor3 = c end)
     -- tabs on the LEFT, inset so they line up with the window outlines
     new("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
@@ -571,6 +565,14 @@ function Library:CreateWindow(title, opts)
             Size = UDim2.new(0, measured.X + 18, 1, 0), Parent = TabRow,
         })
 
+        -- accent line (item 18): sits at the TOP INSIDE the tab button and
+        -- only shows on the ACTIVE tab, updates live with the accent color
+        local TabLine = new("Frame", {
+            Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 0, 0),
+            BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = TabBtn,
+        })
+        onAccent(function(c) TabLine.BackgroundColor3 = c end)
+
 
         local Page = new("Frame", {
             Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = PageHolder,
@@ -612,15 +614,17 @@ function Library:CreateWindow(title, opts)
                 t.Page.Visible = false
                 t.Btn.BackgroundColor3 = Theme.Header
                 t.Btn.TextColor3 = Theme.SubText
+                if t.Line then t.Line.Visible = false end
             end
             Page.Visible = true
             TabBtn.BackgroundColor3 = Theme.Panel
             TabBtn.TextColor3 = Theme.Text
+            TabLine.Visible = true
         end
         TabBtn.MouseButton1Click:Connect(select)
 
 
-        local TabObj = { Btn = TabBtn, Page = Page }
+        local TabObj = { Btn = TabBtn, Page = Page, Line = TabLine }
         table.insert(Window.Tabs, TabObj)
         if #Window.Tabs == 1 then select() end
 

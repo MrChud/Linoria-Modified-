@@ -1,5 +1,5 @@
---[[
-    ModernUI Library — old/plain cheat-menu skin (polish pass)
+--[[    ModernUI Library — old/plain cheat-menu skin (polish pass)
+
 
     Changelog vs previous version:
     1. More visible borders everywhere (brighter border color + outlined
@@ -23,6 +23,13 @@
     7/8. General spacing/contrast polish + a native UIShadow under the
        window, tinted to match the current accent color and updated live
        if you call Window:SetAccentColor().
+    9. Window is now resizable via a grip in the bottom-right corner
+       (min size 300x220), on top of the title-bar drag.
+    10. Dropdowns (AddCombo) restyled to match the rest of the menu:
+        bordered box, hover/open states, accent border while open,
+        accent selection bar + highlighted row on the selected option.
+    11. SV cursor in the color popup is now a filled dot (white + black
+        ring) so it reads clearly against both light and dark.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -33,14 +40,18 @@
         Box:AddCheckbox("Bunnyhop", false, function(v) print(v) end, true) -- risky = red label
 ]]
 
+
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local TextService = game:GetService("TextService")
 
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
+
 local GUI_NAME = "ModernUI_CheatMenu" -- fixed name so we can detect/kill old instances
+
 
 --// Theme
 local Theme = {
@@ -55,8 +66,10 @@ local Theme = {
     Accent     = Color3.fromRGB(60, 130, 220),
 }
 
+
 local FONT = Enum.Font.SourceSans
 local FONT_BOLD = Enum.Font.SourceSansBold
+
 
 --// Helpers
 local function new(class, props, children)
@@ -66,6 +79,7 @@ local function new(class, props, children)
     return inst
 end
 
+
 local function panel(props)
     props = props or {}
     props.BorderSizePixel = 1
@@ -73,6 +87,7 @@ local function panel(props)
     props.BackgroundColor3 = props.BackgroundColor3 or Theme.Panel
     return new("Frame", props)
 end
+
 
 local function pad(parent, x, y)
     y = y or x
@@ -83,9 +98,11 @@ local function pad(parent, x, y)
     })
 end
 
+
 local function labelColor(risky)
     return risky and Theme.Risky or Theme.Text
 end
+
 
 local function hoverFlash(btn, onColor, offColor, propName)
     propName = propName or "TextColor3"
@@ -93,17 +110,20 @@ local function hoverFlash(btn, onColor, offColor, propName)
     btn.MouseLeave:Connect(function() btn[propName] = offColor end)
 end
 
+
 -- robust single-connection dragging (fixes the duplication-while-dragging bug)
 local function makeDraggable(handle, target)
     local dragging = false
     local dragStart, startPos
     local moveConn, endConn
 
+
     local function stopDrag()
         dragging = false
         if moveConn then moveConn:Disconnect() moveConn = nil end
         if endConn then endConn:Disconnect() endConn = nil end
     end
+
 
     handle.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
@@ -113,6 +133,7 @@ local function makeDraggable(handle, target)
         dragging = true
         dragStart = input.Position
         startPos = target.Position
+
 
         moveConn = UserInputService.InputChanged:Connect(function(moveInput)
             if not dragging then return end
@@ -126,6 +147,7 @@ local function makeDraggable(handle, target)
             )
         end)
 
+
         endConn = UserInputService.InputEnded:Connect(function(endInput)
             if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
                 stopDrag()
@@ -133,6 +155,7 @@ local function makeDraggable(handle, target)
         end)
     end)
 end
+
 
 -- flat hue strip. initialHue 0-1. onHueChange(hue) fires while dragging.
 -- returns {SetHue = function(h) ... end} so callers can sync it externally.
@@ -181,23 +204,28 @@ local function buildHueSlider(parent, initialHue, onHueChange)
     }
 end
 
+
 --// Library
 local Library = {}
 Library.__index = Library
+
 
 function Library:CreateWindow(title, opts)
     opts = opts or {}
     if opts.AccentColor then Theme.Accent = opts.AccentColor end
 
+
     -- duplication fix: kill any previous menu of ours before making a new one
     local existing = PlayerGui:FindFirstChild(GUI_NAME)
     if existing then existing:Destroy() end
+
 
     local AccentListeners = {}
     local function onAccent(fn)
         table.insert(AccentListeners, fn)
         fn(Theme.Accent)
     end
+
 
     local ScreenGui = new("ScreenGui", {
         Name = GUI_NAME,
@@ -206,8 +234,10 @@ function Library:CreateWindow(title, opts)
         Parent = PlayerGui,
     })
 
+
     -- taller than wide, like the reference menus
     local WINDOW_W, WINDOW_H = 460, 620
+
 
     local Main = panel({
         Name = "Main",
@@ -216,6 +246,7 @@ function Library:CreateWindow(title, opts)
         BackgroundColor3 = Theme.Background,
         Parent = ScreenGui,
     })
+
 
     -- native UIShadow, tinted to the accent color, kept in sync live
     local Shadow = new("UIShadow", {
@@ -227,6 +258,7 @@ function Library:CreateWindow(title, opts)
         Parent = Main,
     })
     onAccent(function(c) Shadow.Color = c end)
+
 
     local TitleBar = panel({
         Size = UDim2.new(1, 0, 0, 20),
@@ -247,6 +279,66 @@ function Library:CreateWindow(title, opts)
     CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
     makeDraggable(TitleBar, Main)
 
+
+    -- === resize grip (bottom-right), item 9 ===
+    local ResizeGrip = panel({
+        Name = "ResizeGrip",
+        Size = UDim2.new(0, 14, 0, 14),
+        Position = UDim2.new(1, -14, 1, -14),
+        BackgroundColor3 = Theme.Header,
+        BorderColor3 = Theme.Border,
+        ZIndex = 10, Parent = Main,
+    })
+    -- little diagonal grip dots so it reads as "grabbable"
+    local function gripDot(x, y)
+        return new("Frame", {
+            Size = UDim2.new(0, 2, 0, 2), Position = UDim2.new(0, x, 0, y),
+            BackgroundColor3 = Theme.SubText, BorderSizePixel = 0, ZIndex = 11, Parent = ResizeGrip,
+        })
+    end
+    gripDot(3, 9)
+    gripDot(6, 6)
+    gripDot(9, 3)
+
+    local ResizeGripClick = new("TextButton", {
+        Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), ZIndex = 12, Parent = ResizeGrip,
+    })
+
+    local MIN_W, MIN_H = 300, 220
+    local resizing = false
+    local resizeStart, startSize
+    local resizeMove, resizeEnd
+    local function stopResize()
+        resizing = false
+        if resizeMove then resizeMove:Disconnect() resizeMove = nil end
+        if resizeEnd then resizeEnd:Disconnect() resizeEnd = nil end
+    end
+    ResizeGripClick.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        stopResize()
+        resizing = true
+        resizeStart = input.Position
+        startSize = Main.AbsoluteSize
+        resizeMove = UserInputService.InputChanged:Connect(function(moveInput)
+            if not resizing then return end
+            if moveInput.UserInputType ~= Enum.UserInputType.MouseMovement and moveInput.UserInputType ~= Enum.UserInputType.Touch then
+                return
+            end
+            local delta = moveInput.Position - resizeStart
+            local w = math.max(MIN_W, startSize.X + delta.X)
+            local h = math.max(MIN_H, startSize.Y + delta.Y)
+            Main.Size = UDim2.new(0, w, 0, h)
+        end)
+        resizeEnd = UserInputService.InputEnded:Connect(function(endInput)
+            if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
+                stopResize()
+            end
+        end)
+    end)
+
+
     local TabRow = panel({
         Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 20),
         BackgroundColor3 = Theme.Header, Parent = Main,
@@ -257,11 +349,13 @@ function Library:CreateWindow(title, opts)
     })
     pad(TabRow, 2, 2)
 
+
     local PageHolder = panel({
         Size = UDim2.new(1, -8, 1, -50), Position = UDim2.new(0, 4, 0, 46),
         BackgroundColor3 = Theme.Background, Parent = Main,
     })
     pad(PageHolder, 4, 4)
+
 
     -- === floating color picker popup (item 3, redone bigger/clearer) ===
     -- one shared popup per window; opening a color swatch re-targets it and
@@ -288,6 +382,7 @@ function Library:CreateWindow(title, opts)
     ColorPopupClose.MouseButton1Click:Connect(function() ColorPopup.Visible = false end)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
+
     -- step 1: the saturation/value square — drag here after picking a hue
     local SVSquare = new("Frame", {
         Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 130),
@@ -304,27 +399,25 @@ function Library:CreateWindow(title, opts)
         ZIndex = 52, Parent = SVSquare,
     })
     new("UIGradient", { Transparency = NumberSequence.new(1, 0), Rotation = 90, Parent = BlackOverlay })
-    -- cursor: black outer ring + white inner ring, so it stays visible
-    -- against light AND dark parts of the square (a plain white square was
-    -- invisible on the white corner — that's the "horrible" part)
-    local SVCursorOuter = new("Frame", {
-        Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1,
-        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0), ZIndex = 53, Parent = SVSquare,
-    })
-    local SVCursorInner = new("Frame", {
-        Size = UDim2.new(1, -4, 1, -4), Position = UDim2.new(0, 2, 0, 2),
-        BackgroundTransparency = 1, BorderSizePixel = 1, BorderColor3 = Color3.new(1, 1, 1),
-        ZIndex = 54, Parent = SVCursorOuter,
+    -- cursor (item 11): a FILLED dot — white center + black ring, so it
+    -- stays clearly visible against BOTH the white corner and dark corners
+    local SVCursor = new("Frame", {
+        Size = UDim2.new(0, 12, 0, 12),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 53, Parent = SVSquare,
     })
     local function setSVCursor(relX, relY)
-        SVCursorOuter.Position = UDim2.new(relX, -5, relY, -5)
+        SVCursor.Position = UDim2.new(relX, -6, relY, -6)
     end
+
 
     -- step 2: hue slider — pick this FIRST, it sets the square's base color
     local HueHolder = new("Frame", {
         Position = UDim2.new(0, 8, 0, 158), Size = UDim2.new(1, -16, 0, 12),
         BackgroundTransparency = 1, ZIndex = 51, Parent = ColorPopup,
     })
+
 
     -- live preview: swatch + hex readout so you can actually see it's working
     local PreviewSwatch = panel({
@@ -337,8 +430,10 @@ function Library:CreateWindow(title, opts)
         TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 51, Parent = ColorPopup,
     })
 
+
     local popupHue, popupSat, popupVal = 0, 1, 1
     local popupApply -- currently-targeted callback
+
 
     local function recomputeColor()
         local c = Color3.fromHSV(popupHue, popupSat, popupVal)
@@ -348,11 +443,13 @@ function Library:CreateWindow(title, opts)
         return c
     end
 
+
     local hueCtl = buildHueSlider(HueHolder, 0, function(h)
         popupHue = h
         SVSquare.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
         recomputeColor()
     end)
+
 
     local function svUpdate(input)
         local relX = math.clamp((input.Position.X - SVSquare.AbsolutePosition.X) / SVSquare.AbsoluteSize.X, 0, 1)
@@ -380,6 +477,7 @@ function Library:CreateWindow(title, opts)
         end
     end)
 
+
     local function openColorPopup(initialColor, applyFn, popupTitle, nearPos)
         local h, s, v = initialColor:ToHSV()
         popupHue, popupSat, popupVal = h, s, v
@@ -396,6 +494,7 @@ function Library:CreateWindow(title, opts)
         ColorPopup.Visible = true
     end
 
+
     -- === menu visibility key (item 2 fix lives in State so it's mutable) ===
     local State = { ToggleKey = opts.ToggleKeybind or Enum.KeyCode.RightControl }
     local visible = true
@@ -407,16 +506,20 @@ function Library:CreateWindow(title, opts)
         end
     end)
 
+
     local Window = { Tabs = {} }
+
 
     function Window:SetAccentColor(color3)
         Theme.Accent = color3
         for _, fn in ipairs(AccentListeners) do pcall(fn, color3) end
     end
 
+
     function Window:SetToggleKeybind(key)
         State.ToggleKey = key
     end
+
 
     function Window:CreateTab(name)
         -- item 2 (this list): tabs now measure their actual text with
@@ -429,6 +532,7 @@ function Library:CreateWindow(title, opts)
             BackgroundColor3 = Theme.Header, BorderSizePixel = 1, BorderColor3 = Theme.Border,
             Size = UDim2.new(0, measured.X + 18, 1, 0), Parent = TabRow,
         })
+
 
         local Page = new("Frame", {
             Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = PageHolder,
@@ -453,6 +557,7 @@ function Library:CreateWindow(title, opts)
             table.insert(Columns, ColInner)
         end
 
+
         local function select()
             for _, t in pairs(Window.Tabs) do
                 t.Page.Visible = false
@@ -465,14 +570,18 @@ function Library:CreateWindow(title, opts)
         end
         TabBtn.MouseButton1Click:Connect(select)
 
+
         local TabObj = { Btn = TabBtn, Page = Page }
         table.insert(Window.Tabs, TabObj)
         if #Window.Tabs == 1 then select() end
 
+
         local colCounter = 0
+
 
         local function attachElements(Content)
             local E = {}
+
 
             function E:AddLabel(text, risky)
                 new("TextLabel", {
@@ -481,6 +590,7 @@ function Library:CreateWindow(title, opts)
                     TextXAlignment = Enum.TextXAlignment.Left, Parent = Content,
                 })
             end
+
 
             function E:AddButton(text, callback, risky)
                 local Btn = panel({ Size = UDim2.new(1, 0, 0, 20), Parent = Content })
@@ -495,6 +605,7 @@ function Library:CreateWindow(title, opts)
                 return Btn
             end
 
+
             function E:AddCheckbox(text, default, callback, risky)
                 local state = default or false
                 local Row = new("TextButton", {
@@ -505,6 +616,7 @@ function Library:CreateWindow(title, opts)
                     Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0, 0, 0.5, -6),
                     BackgroundColor3 = Theme.Track, Parent = Row,
                 })
+                -- FILLED square when toggled on (instead of a half-empty box)
                 local Fill = new("Frame", {
                     Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0),
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
@@ -525,10 +637,12 @@ function Library:CreateWindow(title, opts)
                 return { Set = set, Get = function() return state end }
             end
 
+
             function E:AddSlider(text, min, max, default, callback, suffix, risky)
                 min, max = min or 0, max or 100
                 local value = default or min
                 suffix = suffix or ""
+
 
                 local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = Content })
                 new("TextLabel", {
@@ -550,6 +664,7 @@ function Library:CreateWindow(title, opts)
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = Track,
                 })
                 onAccent(function(c) Fill.BackgroundColor3 = c end)
+
 
                 local dragging = false
                 local function updateFromInput(input)
@@ -578,45 +693,66 @@ function Library:CreateWindow(title, opts)
                 return { Get = function() return value end }
             end
 
+
+            -- dropdown (item 10): restyled to match the rest of the menu —
+            -- bordered track box, header-bg on hover, accent border/text while
+            -- open, and an accent bar + highlighted row on the selected option
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
                 local open = false
                 local Holder = new("Frame", {
-                    Size = UDim2.new(1, 0, 0, 30), ClipsDescendants = true, BackgroundTransparency = 1, Parent = Content,
+                    Size = UDim2.new(1, 0, 0, 32), ClipsDescendants = true,
+                    BackgroundTransparency = 1, Parent = Content,
                 })
                 new("TextLabel", {
                     Text = text, Font = FONT, TextSize = 13, TextColor3 = labelColor(risky),
                     BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 14),
                     TextXAlignment = Enum.TextXAlignment.Left, Parent = Holder,
                 })
+
                 local Btn = panel({
-                    Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 15),
-                    BackgroundColor3 = Theme.Track, Parent = Holder,
+                    Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 16),
+                    BackgroundColor3 = Theme.Track, BorderColor3 = Theme.Border, Parent = Holder,
                 })
                 local BtnLbl = new("TextLabel", {
                     Text = tostring(selected), Font = FONT, TextSize = 12, TextColor3 = Theme.Text,
-                    BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -18, 1, 0),
+                    BackgroundTransparency = 1, Position = UDim2.new(0, 5, 0, 0), Size = UDim2.new(1, -22, 1, 0),
                     TextXAlignment = Enum.TextXAlignment.Left, Parent = Btn,
                 })
-                new("TextLabel", {
-                    Text = "v", Font = FONT, TextSize = 11, TextColor3 = Theme.SubText,
-                    BackgroundTransparency = 1, Position = UDim2.new(1, -14, 0, 0), Size = UDim2.new(0, 14, 1, 0),
+                local Chevron = new("TextLabel", {
+                    Text = "▾", Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
+                    BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
                     Parent = Btn,
                 })
-                local ClickCatcher = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Btn })
+                local BtnClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Btn })
+                BtnClick.MouseEnter:Connect(function()
+                    if not open then Btn.BackgroundColor3 = Theme.Header end
+                end)
+                BtnClick.MouseLeave:Connect(function()
+                    if not open then Btn.BackgroundColor3 = Theme.Track end
+                end)
+
                 local List = new("Frame", {
-                    Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 0, #options * 15),
+                    Position = UDim2.new(0, 0, 0, 33), Size = UDim2.new(1, 0, 0, 0),
                     BackgroundTransparency = 1, Parent = Holder,
                 })
-                new("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = List })
+                new("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = List })
+
+                local optionsUi = {}
                 for _, opt in ipairs(options) do
                     local OptBtn = panel({
-                        Size = UDim2.new(1, 0, 0, 15), BackgroundColor3 = Theme.Panel, Parent = List,
+                        Size = UDim2.new(1, 0, 0, 15), BackgroundColor3 = Theme.Panel,
+                        BorderColor3 = Theme.Border, Parent = List,
                     })
-                    new("TextLabel", {
+                    local Bar = new("Frame", {
+                        Size = UDim2.new(0, 3, 1, -4), Position = UDim2.new(0, 3, 0, 2),
+                        BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, Parent = OptBtn,
+                    })
+                    onAccent(function(c) Bar.BackgroundColor3 = c end)
+                    local OptLbl = new("TextLabel", {
                         Text = tostring(opt), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
-                        BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -4, 1, 0),
+                        BackgroundTransparency = 1, Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(1, -12, 1, 0),
                         TextXAlignment = Enum.TextXAlignment.Left, Parent = OptBtn,
                     })
                     local OptClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = OptBtn })
@@ -624,16 +760,35 @@ function Library:CreateWindow(title, opts)
                         selected = opt
                         BtnLbl.Text = tostring(opt)
                         if callback then callback(opt) end
-                        open = false
-                        Holder.Size = UDim2.new(1, 0, 0, 30)
+                        setOpen(false)
                     end)
+                    table.insert(optionsUi, { opt = opt, btn = OptBtn, bar = Bar, lbl = OptLbl })
                 end
-                ClickCatcher.MouseButton1Click:Connect(function()
-                    open = not open
-                    Holder.Size = open and UDim2.new(1, 0, 0, 30 + #options * 15) or UDim2.new(1, 0, 0, 30)
-                end)
+
+                local function refreshSelected()
+                    for _, entry in ipairs(optionsUi) do
+                        local isSel = (entry.opt == selected)
+                        entry.bar.Visible = isSel
+                        entry.lbl.TextColor3 = isSel and Theme.Text or Theme.SubText
+                        entry.btn.BackgroundColor3 = isSel and Theme.Header or Theme.Panel
+                    end
+                end
+
+                local function setOpen(v)
+                    open = v
+                    local listH = #options * 15 + math.max(0, #options - 1) * 1
+                    Holder.Size = open and UDim2.new(1, 0, 0, 33 + listH) or UDim2.new(1, 0, 0, 32)
+                    Chevron.Text = open and "▴" or "▾"
+                    Chevron.TextColor3 = open and Theme.Accent or Theme.SubText
+                    Btn.BackgroundColor3 = open and Theme.Header or Theme.Track
+                    Btn.BorderColor3 = open and Theme.Accent or Theme.Border
+                    if open then refreshSelected() end
+                end
+                BtnClick.MouseButton1Click:Connect(function() setOpen(not open) end)
+
                 return { Get = function() return selected end }
             end
+
 
             -- plain bindable key for YOUR OWN features. Does not affect the
             -- menu's own show/hide key — use AddMenuKeybind for that.
@@ -671,6 +826,7 @@ function Library:CreateWindow(title, opts)
                 return { Get = function() return key end }
             end
 
+
             -- item 2 fix: THIS is the one that actually rebinds the menu's
             -- real show/hide key, via Window:SetToggleKeybind.
             function E:AddMenuKeybind(text, risky)
@@ -706,6 +862,7 @@ function Library:CreateWindow(title, opts)
                 return { Get = function() return key end }
             end
 
+
             -- item 3: opens the shared floating popup instead of an inline dropdown
             function E:AddColorPicker(text, default, callback, risky)
                 local color = default or Color3.fromRGB(255, 255, 255)
@@ -730,6 +887,7 @@ function Library:CreateWindow(title, opts)
                 return { Get = function() return color end }
             end
 
+
             function E:AddAccentPicker(text, risky)
                 local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, Parent = Content })
                 new("TextLabel", {
@@ -745,17 +903,21 @@ function Library:CreateWindow(title, opts)
                 buildHueSlider(SliderHolder, h, function(hue) Window:SetAccentColor(Color3.fromHSV(hue, 1, 1)) end)
             end
 
+
             return E
         end
+
 
         function TabObj:CreateBox(boxTitle, column, startCollapsed)
             colCounter = colCounter + 1
             local col = column or ((colCounter - 1) % 2) + 1
 
+
             local Box = panel({
                 Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
                 BackgroundColor3 = Theme.Panel, Parent = Columns[col],
             })
+
 
             local Header = panel({
                 Size = UDim2.new(1, 0, 0, 16), BackgroundColor3 = Theme.Header, Parent = Box,
@@ -771,12 +933,14 @@ function Library:CreateWindow(title, opts)
                 Parent = Header,
             })
 
+
             local Content = new("Frame", {
                 Position = UDim2.new(0, 0, 0, 16), Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = Box,
             })
             new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Content })
             pad(Content, 6, 6)
+
 
             local collapsed = startCollapsed or false
             local function applyCollapsed()
@@ -789,7 +953,9 @@ function Library:CreateWindow(title, opts)
             end)
             applyCollapsed()
 
+
             local BoxObj = attachElements(Content)
+
 
             function BoxObj:CreatePillTabs(names)
                 local PillRow = new("Frame", {
@@ -803,6 +969,7 @@ function Library:CreateWindow(title, opts)
                     Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1, LayoutOrder = 0, Parent = Content,
                 })
+
 
                 local pillTabs = {}
                 for i, pname in ipairs(names) do
@@ -821,6 +988,7 @@ function Library:CreateWindow(title, opts)
                     })
                     new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = PPage })
 
+
                     local function selectPill()
                         for _, p in ipairs(pillTabs) do
                             p.Page.Visible = false
@@ -833,10 +1001,12 @@ function Library:CreateWindow(title, opts)
                     end
                     PillClick.MouseButton1Click:Connect(selectPill)
 
+
                     local entry = { Pill = Pill, Lbl = PillLbl, Page = PPage }
                     table.insert(pillTabs, entry)
                     if i == 1 then selectPill() end
                 end
+
 
                 local result = {}
                 for i, pname in ipairs(names) do
@@ -845,34 +1015,73 @@ function Library:CreateWindow(title, opts)
                 return result
             end
 
+
             return BoxObj
         end
+
 
         return TabObj
     end
 
+
     return Window
 end
 
+
 return Library
 
+
 --[[
-    EXAMPLE:
+    EXAMPLE (covers every element the library ships):
 
     local Library = loadstring(readfile("ModernUILibrary.lua"))()
-    local Window = Library:CreateWindow("fracture")
+    local Window = Library:CreateWindow("fracture", {
+        AccentColor    = Color3.fromRGB(255, 140, 0),
+        ToggleKeybind  = Enum.KeyCode.RightControl,
+    })
 
-    local Visuals = Window:CreateTab("Visuals")
-    local Box1 = Visuals:CreateBox("ESP", 1)
-    local pills = Box1:CreatePillTabs({"Enemy", "Team", "Local"})
-    pills["Enemy"]:AddCheckbox("Enabled", false)
-    pills["Enemy"]:AddCheckbox("Bunnyhop", false, nil, true) -- risky = red text
-    pills["Enemy"]:AddColorPicker("Box Color", Color3.fromRGB(255, 165, 0)) -- opens floating popup
-    pills["Enemy"]:AddSlider("Render Distance", 0, 5000, 2500, nil, "m")
 
-    local Settings = Window:CreateTab("Settings")
-    local Box3 = Settings:CreateBox("Appearance", 1)
-    Box3:AddAccentPicker("Accent Color")           -- recolors checkboxes/sliders/shadow live
-    Box3:AddMenuKeybind("Menu Keybind")            -- THIS actually rebinds show/hide
-    Box3:AddKeybind("My Custom Feature Key", Enum.KeyCode.G, function(key) end) -- your own bindable key
+    -- ================ MAIN TAB ================
+    local MainTab = Window:CreateTab("Main")
+
+    local Combat = MainTab:CreateBox("Combat", 1)          -- column 1
+    Combat:AddCheckbox("Enabled", true, function(v) print("enabled", v) end)
+    Combat:AddCombo("Resolver", {"Off", "Pitch", "Yaw", "Full"}, "Pitch", function(v) print("mode", v) end)
+    Combat:AddSlider("Hitbox Size", 1, 10, 4, function(v) print(v) end, "x", true) -- red label (risky)
+    Combat:AddKeybind("Triggerbot", Enum.KeyCode.G, function() print("trigger") end)
+
+    local Visuals = MainTab:CreateBox("Visuals", 1)        -- column 1
+    Visuals:AddCheckbox("ESP", true, function(v) end)
+    Visuals:AddCombo("ESP Type", {"Box", "Corner", "Tracer"}, "Corner", function(v) end)
+    Visuals:AddColorPicker("Box Color", Color3.fromRGB(255, 165, 0), function(c) end)
+
+    local Misc = MainTab:CreateBox("Misc", 2)              -- column 2
+    Misc:AddLabel("General options", true)                 -- red label
+    Misc:AddButton("Teleport to spawn", function() print("tp") end)
+    Misc:AddCheckbox("Anti Aim", false, function(v) end)
+
+    local Extra = MainTab:CreateBox("Extra", 2, true)      -- column 2, starts collapsed
+    Extra:AddCheckbox("Collapsed box", false, function(v) end)
+
+    local Pills = MainTab:CreateBox("Pill Tabs", 2)        -- nested sub-tabs
+    local pill = Pills:CreatePillTabs({"Enemy", "Team", "Local"})
+    pill["Enemy"]:AddCheckbox("Enabled", false, function(v) end)
+    pill["Enemy"]:AddSlider("Distance", 0, 100, 50, nil, "m")
+    pill["Team"]:AddCheckbox("Team ESP", true, function(v) end)
+    pill["Local"]:AddButton("Fake Lag", function() end)
+
+
+    -- ================ SETTINGS TAB ================
+    local SettingsTab = Window:CreateTab("Settings")
+
+    local Appearance = SettingsTab:CreateBox("Appearance", 1)
+    Appearance:AddAccentPicker("Accent Color")
+    Appearance:AddColorPicker("Text Color", Color3.fromRGB(215, 215, 215), function(c) end)
+    Appearance:AddButton("Reset Accent", function()
+        Window:SetAccentColor(Color3.fromRGB(60, 130, 220))
+    end)
+
+    local Bindings = SettingsTab:CreateBox("Bindings", 2)
+    Bindings:AddMenuKeybind("Menu Keybind")                -- actually rebinds show/hide
+    Bindings:AddKeybind("Custom Key", Enum.KeyCode.F, function() end)
 ]]

@@ -42,6 +42,15 @@
     18. A tiny accent-colored line sits under every groupbox title, and a
         matching one sits at the TOP of the ACTIVE tab button (not across
         the whole tab row), both updating live with the accent color.
+    19. TweenService pass — everything animates now:
+          . The tab accent line is one indicator that SLIDES between tab
+            buttons when you switch.
+          . Accent color changes tween smoothly instead of snapping
+            (except while dragging the accent picker — that stays instant
+            or it'd stutter).
+          . Hover states fade via tween instead of hard-cutting.
+          . Dropdowns slide open/closed with a rotating chevron.
+          . Checkbox fill sweeps in/out.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -58,6 +67,7 @@
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local TextService = game:GetService("TextService")
+local TweenService = game:GetService("TweenService")
 
 
 local LocalPlayer = Players.LocalPlayer
@@ -117,10 +127,25 @@ local function labelColor(risky)
     return risky and Theme.Risky or Theme.Text
 end
 
-local function hoverFlash(btn, onColor, offColor, propName)
-    propName = propName or "TextColor3"
-    btn.MouseEnter:Connect(function() btn[propName] = onColor end)
-    btn.MouseLeave:Connect(function() btn[propName] = offColor end)
+
+--// Tween helpers (item 19)
+local ACCENT_TWEEN = 0.15
+local activeTweens = {}
+local function tweenTo(target, props, time, style, dir)
+    -- one active tween per instance so rapid-fire calls can't stack/jitter
+    if activeTweens[target] then activeTweens[target]:Cancel() end
+    local tk = TweenService:Create(
+        target,
+        TweenInfo.new(time or ACCENT_TWEEN, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+        props
+    )
+    activeTweens[target] = tk
+    tk:Play()
+    return tk
+end
+
+local function tweenBg(target, color, time)
+    tweenTo(target, { BackgroundColor3 = color }, time or 0.12)
 end
 
 
@@ -239,6 +264,20 @@ function Library:CreateWindow(title, opts)
         fn(Theme.Accent)
     end
 
+    -- accent listeners tween by default; while dragging the accent picker
+    -- we flip this on so it snaps instead of stutter-tweening every pixel
+    local accentInst = false
+    local function bindAccentColor(target, prop)
+        onAccent(function(c)
+            if accentInst then
+                if activeTweens[target] then activeTweens[target]:Cancel() end
+                target[prop] = c
+            else
+                tweenTo(target, { [prop] = c }, ACCENT_TWEEN)
+            end
+        end)
+    end
+
 
     local ScreenGui = new("ScreenGui", {
         Name = GUI_NAME,
@@ -270,7 +309,7 @@ function Library:CreateWindow(title, opts)
         Spread = UDim2.new(0, 0, 0, 0),
         Parent = Main,
     })
-    onAccent(function(c) Shadow.Color = c end)
+    bindAccentColor(Shadow, "Color")
 
 
     local TitleBar = panel({
@@ -364,6 +403,16 @@ function Library:CreateWindow(title, opts)
         Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 20),
         BackgroundColor3 = Theme.Header, Parent = Main,
     })
+
+    -- single accent indicator (item 18/19): slides between tab buttons,
+    -- sits at the TOP of the active one, updates live with accent color
+    local TabIndicator = new("Frame", {
+        Name = "TabIndicator",
+        Size = UDim2.new(0, 0, 0, 2), Position = UDim2.new(0, 0, 0, 2),
+        BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, ZIndex = 2, Parent = TabRow,
+    })
+    bindAccentColor(TabIndicator, "BackgroundColor3")
+
     -- tabs on the LEFT, inset so they line up with the window outlines
     new("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
@@ -372,6 +421,25 @@ function Library:CreateWindow(title, opts)
         Parent = TabRow,
     })
     pad(TabRow, 4, 2)
+
+    -- move the indicator over a given tab button; instant = snap, else slide
+    local function moveIndicator(toBtn, instant)
+        task.defer(function()
+            if not toBtn or not toBtn.Parent then return end
+            local rel = toBtn.AbsolutePosition - TabRow.AbsolutePosition
+            local props = {
+                Position = UDim2.new(0, rel.X, 0, rel.Y),
+                Size = UDim2.new(0, toBtn.AbsoluteSize.X, 0, 2),
+            }
+            if instant then
+                if activeTweens[TabIndicator] then activeTweens[TabIndicator]:Cancel() end
+                TabIndicator.Position = props.Position
+                TabIndicator.Size = props.Size
+            else
+                tweenTo(TabIndicator, props, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            end
+        end)
+    end
 
 
     local PageHolder = panel({
@@ -398,13 +466,18 @@ function Library:CreateWindow(title, opts)
         BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -20, 1, 0),
         TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 51, Parent = ColorPopupHeader,
     })
-    -- X button: close the color popup
+    -- X button: close the color popup (hover fades in)
     local ColorPopupClose = new("TextButton", {
         Text = "x", Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.SubText,
         BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
         ZIndex = 51, Parent = ColorPopupHeader,
     })
-    hoverFlash(ColorPopupClose, Color3.fromRGB(210, 80, 80), Theme.SubText)
+    ColorPopupClose.MouseEnter:Connect(function()
+        tweenTo(ColorPopupClose, { TextColor3 = Color3.fromRGB(210, 80, 80) }, 0.1)
+    end)
+    ColorPopupClose.MouseLeave:Connect(function()
+        tweenTo(ColorPopupClose, { TextColor3 = Theme.SubText }, 0.1)
+    end)
     ColorPopupClose.MouseButton1Click:Connect(function() ColorPopup.Visible = false end)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
@@ -541,11 +614,14 @@ function Library:CreateWindow(title, opts)
 
 
     local Window = { Tabs = {} }
+    local activeTabBtn -- which tab button is currently selected (hover guard)
 
 
-    function Window:SetAccentColor(color3)
+    function Window:SetAccentColor(color3, instant)
         Theme.Accent = color3
+        accentInst = instant or false
         for _, fn in ipairs(AccentListeners) do pcall(fn, color3) end
+        accentInst = false
     end
 
 
@@ -565,13 +641,13 @@ function Library:CreateWindow(title, opts)
             Size = UDim2.new(0, measured.X + 18, 1, 0), Parent = TabRow,
         })
 
-        -- accent line (item 18): sits at the TOP INSIDE the tab button and
-        -- only shows on the ACTIVE tab, updates live with the accent color
-        local TabLine = new("Frame", {
-            Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 0, 0),
-            BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = TabBtn,
-        })
-        onAccent(function(c) TabLine.BackgroundColor3 = c end)
+        -- hover fade on inactive tabs (active one is guarded out)
+        TabBtn.MouseEnter:Connect(function()
+            if TabBtn ~= activeTabBtn then tweenBg(TabBtn, Color3.fromRGB(42, 42, 42)) end
+        end)
+        TabBtn.MouseLeave:Connect(function()
+            if TabBtn ~= activeTabBtn then tweenBg(TabBtn, Theme.Header) end
+        end)
 
 
         local Page = new("Frame", {
@@ -612,19 +688,22 @@ function Library:CreateWindow(title, opts)
         local function select()
             for _, t in pairs(Window.Tabs) do
                 t.Page.Visible = false
+                if activeTweens[t.Btn] then activeTweens[t.Btn]:Cancel() end
                 t.Btn.BackgroundColor3 = Theme.Header
                 t.Btn.TextColor3 = Theme.SubText
-                if t.Line then t.Line.Visible = false end
             end
             Page.Visible = true
+            if activeTweens[TabBtn] then activeTweens[TabBtn]:Cancel() end
             TabBtn.BackgroundColor3 = Theme.Panel
             TabBtn.TextColor3 = Theme.Text
-            TabLine.Visible = true
+            activeTabBtn = TabBtn
+            -- slide the single accent indicator over this tab (snap on first)
+            moveIndicator(TabBtn, #Window.Tabs == 1)
         end
         TabBtn.MouseButton1Click:Connect(select)
 
 
-        local TabObj = { Btn = TabBtn, Page = Page, Line = TabLine }
+        local TabObj = { Btn = TabBtn, Page = Page }
         table.insert(Window.Tabs, TabObj)
         if #Window.Tabs == 1 then select() end
 
@@ -652,8 +731,8 @@ function Library:CreateWindow(title, opts)
                     BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Btn,
                 })
                 local Click = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Btn })
-                Click.MouseEnter:Connect(function() Btn.BackgroundColor3 = Theme.Header end)
-                Click.MouseLeave:Connect(function() Btn.BackgroundColor3 = Theme.Panel end)
+                Click.MouseEnter:Connect(function() tweenBg(Btn, Theme.Header) end)
+                Click.MouseLeave:Connect(function() tweenBg(Btn, Theme.Panel) end)
                 Click.MouseButton1Click:Connect(function() if callback then callback() end end)
                 return Btn
             end
@@ -669,13 +748,14 @@ function Library:CreateWindow(title, opts)
                     Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0, 0, 0.5, -6),
                     BackgroundColor3 = Theme.Track, Parent = Row,
                 })
-                -- FILLED square when toggled on (item 13) instead of a half-empty box
+                -- FILLED square when toggled on (item 13); the fill sweeps
+                -- in/out (item 19) instead of popping
                 local Fill = new("Frame", {
-                    Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0),
+                    Size = UDim2.new(state and 1 or 0, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0),
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
-                    Visible = state, Parent = Sq,
+                    Parent = Sq,
                 })
-                onAccent(function(c) Fill.BackgroundColor3 = c end)
+                bindAccentColor(Fill, "BackgroundColor3")
                 new("TextLabel", {
                     Text = text, Font = FONT, TextSize = 13, TextColor3 = labelColor(risky),
                     BackgroundTransparency = 1, Position = UDim2.new(0, 20, 0, 0), Size = UDim2.new(1, -20, 1, 0),
@@ -683,7 +763,7 @@ function Library:CreateWindow(title, opts)
                 })
                 local function set(v, fire)
                     state = v
-                    Fill.Visible = state
+                    tweenTo(Fill, { Size = UDim2.new(state and 1 or 0, 0, 1, 0) }, 0.12)
                     if fire ~= false and callback then callback(state) end
                 end
                 Row.MouseButton1Click:Connect(function() set(not state) end)
@@ -712,11 +792,14 @@ function Library:CreateWindow(title, opts)
                     Position = UDim2.new(0, 0, 0, 16), Size = UDim2.new(1, 0, 0, 6),
                     BackgroundColor3 = Theme.Track, Parent = Holder,
                 })
+                -- track lights up on hover (item 19)
+                Track.MouseEnter:Connect(function() tweenBg(Track, Color3.fromRGB(30, 30, 30)) end)
+                Track.MouseLeave:Connect(function() tweenBg(Track, Theme.Track) end)
                 local Fill = new("Frame", {
                     Size = UDim2.new((value - min) / (max - min), 0, 1, 0),
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = Track,
                 })
-                onAccent(function(c) Fill.BackgroundColor3 = c end)
+                bindAccentColor(Fill, "BackgroundColor3")
 
 
                 local dragging = false
@@ -747,9 +830,9 @@ function Library:CreateWindow(title, opts)
             end
 
 
-            -- dropdown (item 10): bordered track box, accent outline while
-            -- open. The selected row uses per-row state objects so the
-            -- highlight is GUARANTEED to follow your clicks.
+            -- dropdown (item 10 + 19): bordered track box, accent outline
+            -- while open, slides open with a rotating chevron. Selected row
+            -- uses per-row state objects so highlights never get stuck.
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
@@ -774,17 +857,18 @@ function Library:CreateWindow(title, opts)
                     TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
                     Parent = Btn,
                 })
+                -- chevron rotates 0 -> 180 on open (points up), back down on close
                 local Chevron = new("TextLabel", {
                     Text = "▼", Font = FONT_BOLD, TextSize = 11, TextColor3 = Theme.SubText,
                     BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
-                    Parent = Btn,
+                    Rotation = 0, Parent = Btn,
                 })
                 local BtnClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Btn })
                 BtnClick.MouseEnter:Connect(function()
-                    if not open then Btn.BackgroundColor3 = Theme.Header end
+                    if not open then tweenBg(Btn, Theme.Header) end
                 end)
                 BtnClick.MouseLeave:Connect(function()
-                    if not open then Btn.BackgroundColor3 = Theme.Track end
+                    if not open then tweenBg(Btn, Theme.Track) end
                 end)
 
                 local List = new("Frame", {
@@ -810,7 +894,7 @@ function Library:CreateWindow(title, opts)
                         Size = UDim2.new(0, 3, 1, -4), Position = UDim2.new(0, 3, 0, 2),
                         BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, Parent = OptBtn,
                     })
-                    onAccent(function(c) Bar.BackgroundColor3 = c end)
+                    bindAccentColor(Bar, "BackgroundColor3")
                     row.bar = Bar
                     local OptLbl = new("TextLabel", {
                         Text = tostring(opt), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
@@ -821,15 +905,16 @@ function Library:CreateWindow(title, opts)
                     local OptClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = OptBtn })
 
                     function row:SetSelected(v)
+                        if activeTweens[self.btn] then activeTweens[self.btn]:Cancel() end
                         self.bar.Visible = v
                         self.lbl.TextColor3 = v and Theme.Text or Theme.SubText
                         self.btn.BackgroundColor3 = v and Theme.Header or Theme.Panel
                     end
                     OptClick.MouseEnter:Connect(function()
-                        if row.opt ~= selected then OptBtn.BackgroundColor3 = Theme.Header end
+                        if row.opt ~= selected then tweenBg(OptBtn, Theme.Header) end
                     end)
                     OptClick.MouseLeave:Connect(function()
-                        if row.opt ~= selected then OptBtn.BackgroundColor3 = Theme.Panel end
+                        if row.opt ~= selected then tweenBg(OptBtn, Theme.Panel) end
                     end)
                     OptClick.MouseButton1Click:Connect(function()
                         selected = row.opt
@@ -848,12 +933,19 @@ function Library:CreateWindow(title, opts)
                 local function setOpen(v)
                     open = v
                     local listH = (#options * 15) + math.max(0, #options - 1)
-                    Holder.Size = open and UDim2.new(1, 0, 0, 33 + listH) or UDim2.new(1, 0, 0, 34)
-                    Chevron.Text = open and "▲" or "▼"
-                    Chevron.TextColor3 = open and Theme.Accent or Theme.SubText
-                    Btn.BackgroundColor3 = open and Theme.Header or Theme.Track
-                    Btn.BorderColor3 = open and Theme.Accent or Theme.Border -- accent outline while open
-                    if open then refreshSelected() end
+                    -- slide the list out/in (Holder clips so it looks like a drawer)
+                    tweenTo(Holder, { Size = v and UDim2.new(1, 0, 0, 33 + listH) or UDim2.new(1, 0, 0, 34) }, 0.14)
+                    -- rotate the chevron + tint it accent while open
+                    Chevron.Text = "▼"
+                    tweenTo(Chevron, {
+                        Rotation = v and 180 or 0,
+                        TextColor3 = v and Theme.Accent or Theme.SubText,
+                    }, 0.14)
+                    tweenTo(Btn, {
+                        BackgroundColor3 = v and Theme.Header or Theme.Track,
+                        BorderColor3 = v and Theme.Accent or Theme.Border, -- accent outline while open
+                    }, 0.12)
+                    if v then refreshSelected() end
                 end
                 BtnClick.MouseButton1Click:Connect(function() setOpen(not open) end)
 
@@ -972,7 +1064,11 @@ function Library:CreateWindow(title, opts)
                     BackgroundTransparency = 1, Parent = Holder,
                 })
                 local h = select(1, Theme.Accent:ToHSV())
-                buildHueSlider(SliderHolder, h, function(hue) Window:SetAccentColor(Color3.fromHSV(hue, 1, 1)) end)
+                -- instant = true while dragging so it snaps instead of
+                -- fighting itself with a tween every frame
+                buildHueSlider(SliderHolder, h, function(hue)
+                    Window:SetAccentColor(Color3.fromHSV(hue, 1, 1), true)
+                end)
             end
 
 
@@ -1004,7 +1100,7 @@ function Library:CreateWindow(title, opts)
                 Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1),
                 BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = Header,
             })
-            onAccent(function(c) HeaderLine.BackgroundColor3 = c end)
+            bindAccentColor(HeaderLine, "BackgroundColor3")
             local CollapseBtn = new("TextButton", {
                 Text = "-", Font = FONT_BOLD, TextSize = 13, TextColor3 = Theme.SubText,
                 BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
@@ -1049,6 +1145,7 @@ function Library:CreateWindow(title, opts)
                 })
 
 
+                local activePill
                 local pillTabs = {}
                 for i, pname in ipairs(names) do
                     local Pill = panel({
@@ -1060,6 +1157,12 @@ function Library:CreateWindow(title, opts)
                         BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Pill,
                     })
                     local PillClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = Pill })
+                    PillClick.MouseEnter:Connect(function()
+                        if Pill ~= activePill then tweenBg(Pill, Color3.fromRGB(32, 32, 32)) end
+                    end)
+                    PillClick.MouseLeave:Connect(function()
+                        if Pill ~= activePill then tweenBg(Pill, Theme.Track) end
+                    end)
                     local PPage = new("Frame", {
                         Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
                         BackgroundTransparency = 1, Visible = false, Parent = PagesFrame,
@@ -1070,12 +1173,15 @@ function Library:CreateWindow(title, opts)
                     local function selectPill()
                         for _, p in ipairs(pillTabs) do
                             p.Page.Visible = false
+                            if activeTweens[p.Pill] then activeTweens[p.Pill]:Cancel() end
                             p.Pill.BackgroundColor3 = Theme.Track
                             p.Lbl.TextColor3 = Theme.SubText
                         end
                         PPage.Visible = true
+                        if activeTweens[Pill] then activeTweens[Pill]:Cancel() end
                         Pill.BackgroundColor3 = Theme.Panel
                         PillLbl.TextColor3 = Theme.Text
+                        activePill = Pill
                     end
                     PillClick.MouseButton1Click:Connect(selectPill)
 

@@ -3,7 +3,7 @@
     Square corners, native 1px borders, default Roblox font, flat colors,
     little to no animation. Structure: top plain tab row -> 2-column boxed
     panels -> plain checkboxes/sliders/dropdowns/keybinds.
-
+ 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
         local Window = Library:CreateWindow("menu")
@@ -11,13 +11,13 @@
         local Box = Tab:CreateBox("General")
         Box:AddCheckbox("Enabled", false, function(v) print(v) end)
 ]]
-
+ 
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
-
+ 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
+ 
 --// Theme — flat, plain, nothing fancy
 local Theme = {
     Background = Color3.fromRGB(22, 22, 22),
@@ -29,10 +29,10 @@ local Theme = {
     Border     = Color3.fromRGB(55, 55, 55),
     Accent     = Color3.fromRGB(60, 130, 220),
 }
-
+ 
 local FONT = Enum.Font.SourceSans
 local FONT_BOLD = Enum.Font.SourceSansBold
-
+ 
 --// Helpers
 local function new(class, props, children)
     local inst = Instance.new(class)
@@ -40,7 +40,7 @@ local function new(class, props, children)
     for _, c in ipairs(children or {}) do c.Parent = inst end
     return inst
 end
-
+ 
 -- plain, boxy panel: square corners, native 1px border (no UIStroke/UICorner)
 local function panel(props)
     props = props or {}
@@ -49,7 +49,7 @@ local function panel(props)
     props.BackgroundColor3 = props.BackgroundColor3 or Theme.Panel
     return new("Frame", props)
 end
-
+ 
 local function pad(parent, x, y)
     y = y or x
     return new("UIPadding", {
@@ -58,14 +58,14 @@ local function pad(parent, x, y)
         Parent = parent,
     })
 end
-
+ 
 -- quick, non-fancy hover flash (no easing curves, just an instant-ish linear step)
 local function hoverFlash(btn, onColor, offColor, propName)
     propName = propName or "TextColor3"
     btn.MouseEnter:Connect(function() btn[propName] = onColor end)
     btn.MouseLeave:Connect(function() btn[propName] = offColor end)
 end
-
+ 
 local function makeDraggable(handle, target)
     local dragging, dragStart, startPos
     handle.InputBegan:Connect(function(input)
@@ -88,7 +88,7 @@ local function makeDraggable(handle, target)
         end
     end)
 end
-
+ 
 -- plain flat hue strip (used for color pickers) — no gradient border/rounding
 local function buildHueSlider(parent, onChange)
     local Track = panel({ Size = UDim2.new(1, 0, 0, 8), Parent = parent, BackgroundColor3 = Theme.Track })
@@ -132,30 +132,30 @@ local function buildHueSlider(parent, onChange)
     end)
     return Track
 end
-
+ 
 --// Library
 local Library = {}
 Library.__index = Library
-
+ 
 function Library:CreateWindow(title, opts)
     opts = opts or {}
     if opts.AccentColor then Theme.Accent = opts.AccentColor end
-
+ 
     local AccentListeners = {}
     local function onAccent(fn)
         table.insert(AccentListeners, fn)
         fn(Theme.Accent)
     end
-
+ 
     local ScreenGui = new("ScreenGui", {
         Name = "ModernUI_" .. tostring(math.random(1, 999999)),
         ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
         Parent = PlayerGui,
     })
-
+ 
     local WINDOW_W, WINDOW_H = 600, 400
-
+ 
     local Main = panel({
         Name = "Main",
         Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H),
@@ -163,7 +163,7 @@ function Library:CreateWindow(title, opts)
         BackgroundColor3 = Theme.Background,
         Parent = ScreenGui,
     })
-
+ 
     local TitleBar = panel({
         Size = UDim2.new(1, 0, 0, 20),
         BackgroundColor3 = Theme.Header,
@@ -182,7 +182,7 @@ function Library:CreateWindow(title, opts)
     hoverFlash(CloseBtn, Color3.fromRGB(210, 80, 80), Theme.SubText)
     CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
     makeDraggable(TitleBar, Main)
-
+ 
     -- plain tab row, flat text, no sliding indicator — just a highlighted
     -- background on whichever tab is active (classic script-hub look)
     local TabRow = panel({
@@ -193,13 +193,13 @@ function Library:CreateWindow(title, opts)
         FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 0),
         SortOrder = Enum.SortOrder.LayoutOrder, Parent = TabRow,
     })
-
+ 
     local PageHolder = new("Frame", {
         Size = UDim2.new(1, 0, 1, -42), Position = UDim2.new(0, 0, 0, 42),
         BackgroundTransparency = 1, Parent = Main,
     })
     pad(PageHolder, 4, 4)
-
+ 
     local visible = true
     local toggleKey = opts.ToggleKeybind or Enum.KeyCode.RightControl
     UserInputService.InputBegan:Connect(function(input, gpe)
@@ -209,21 +209,21 @@ function Library:CreateWindow(title, opts)
             Main.Visible = visible
         end
     end)
-
+ 
     local Window = { Tabs = {} }
-
+ 
     function Window:SetAccentColor(color3)
         Theme.Accent = color3
         for _, fn in ipairs(AccentListeners) do pcall(fn, color3) end
     end
-
+ 
     function Window:CreateTab(name)
         local TabBtn = new("TextButton", {
             Text = name, Font = FONT, TextSize = 13, TextColor3 = Theme.SubText,
             BackgroundColor3 = Theme.Header, BorderSizePixel = 0,
             Size = UDim2.new(0, #name * 8 + 16, 1, 0), Parent = TabRow,
         })
-
+ 
         local Page = new("Frame", {
             Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Visible = false, Parent = PageHolder,
         })
@@ -239,7 +239,7 @@ function Library:CreateWindow(title, opts)
             new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Col })
             table.insert(Columns, Col)
         end
-
+ 
         local function select()
             for _, t in pairs(Window.Tabs) do
                 t.Page.Visible = false
@@ -251,16 +251,16 @@ function Library:CreateWindow(title, opts)
             TabBtn.TextColor3 = Theme.Text
         end
         TabBtn.MouseButton1Click:Connect(select)
-
+ 
         local TabObj = { Btn = TabBtn, Page = Page }
         table.insert(Window.Tabs, TabObj)
         if #Window.Tabs == 1 then select() end
-
+ 
         local colCounter = 0
-
+ 
         local function attachElements(Content)
             local E = {}
-
+ 
             function E:AddLabel(text)
                 new("TextLabel", {
                     Text = text, Font = FONT, TextSize = 13, TextColor3 = Theme.SubText,
@@ -268,7 +268,7 @@ function Library:CreateWindow(title, opts)
                     TextXAlignment = Enum.TextXAlignment.Left, Parent = Content,
                 })
             end
-
+ 
             function E:AddButton(text, callback)
                 local Btn = panel({
                     Size = UDim2.new(1, 0, 0, 20), Parent = Content,
@@ -284,7 +284,7 @@ function Library:CreateWindow(title, opts)
                 Click.MouseButton1Click:Connect(function() if callback then callback() end end)
                 return Btn
             end
-
+ 
             function E:AddCheckbox(text, default, callback)
                 local state = default or false
                 local Row = new("TextButton", {
@@ -314,12 +314,12 @@ function Library:CreateWindow(title, opts)
                 Row.MouseButton1Click:Connect(function() set(not state) end)
                 return { Set = set, Get = function() return state end }
             end
-
+ 
             function E:AddSlider(text, min, max, default, callback, suffix)
                 min, max = min or 0, max or 100
                 local value = default or min
                 suffix = suffix or ""
-
+ 
                 local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = Content })
                 new("TextLabel", {
                     Text = text, Font = FONT, TextSize = 13, TextColor3 = Theme.Text,
@@ -340,7 +340,7 @@ function Library:CreateWindow(title, opts)
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = Track,
                 })
                 onAccent(function(c) Fill.BackgroundColor3 = c end)
-
+ 
                 local dragging = false
                 local function updateFromInput(input)
                     local rel = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
@@ -367,7 +367,7 @@ function Library:CreateWindow(title, opts)
                 end)
                 return { Get = function() return value end }
             end
-
+ 
             function E:AddCombo(text, options, default, callback)
                 options = options or {}
                 local selected = default or options[1]
@@ -424,7 +424,7 @@ function Library:CreateWindow(title, opts)
                 end)
                 return { Get = function() return selected end }
             end
-
+ 
             function E:AddKeybind(text, default, callback)
                 local key = default or Enum.KeyCode.Unknown
                 local listening = false
@@ -458,7 +458,7 @@ function Library:CreateWindow(title, opts)
                 end)
                 return { Get = function() return key end }
             end
-
+ 
             function E:AddColorPicker(text, default, callback)
                 local color = default or Color3.fromRGB(255, 255, 255)
                 local open = false
@@ -490,7 +490,7 @@ function Library:CreateWindow(title, opts)
                 end)
                 return { Get = function() return color end }
             end
-
+ 
             function E:AddAccentPicker(text)
                 local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, Parent = Content })
                 new("TextLabel", {
@@ -504,19 +504,19 @@ function Library:CreateWindow(title, opts)
                 })
                 buildHueSlider(SliderHolder, function(c) Window:SetAccentColor(c) end)
             end
-
+ 
             return E
         end
-
+ 
         function TabObj:CreateBox(boxTitle, column, startCollapsed)
             colCounter = colCounter + 1
             local col = column or ((colCounter - 1) % 2) + 1
-
+ 
             local Box = panel({
                 Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
                 BackgroundColor3 = Theme.Panel, Parent = Columns[col],
             })
-
+ 
             local Header = panel({
                 Size = UDim2.new(1, 0, 0, 16), BackgroundColor3 = Theme.Header, Parent = Box,
             })
@@ -530,14 +530,14 @@ function Library:CreateWindow(title, opts)
                 BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
                 Parent = Header,
             })
-
+ 
             local Content = new("Frame", {
                 Position = UDim2.new(0, 0, 0, 16), Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, Parent = Box,
             })
             new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = Content })
             pad(Content, 6, 6)
-
+ 
             local collapsed = startCollapsed or false
             local function applyCollapsed()
                 Content.Visible = not collapsed
@@ -548,9 +548,9 @@ function Library:CreateWindow(title, opts)
                 applyCollapsed()
             end)
             applyCollapsed()
-
+ 
             local BoxObj = attachElements(Content)
-
+ 
             function BoxObj:CreatePillTabs(names)
                 local PillRow = new("Frame", {
                     Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, LayoutOrder = -1, Parent = Content,
@@ -563,7 +563,7 @@ function Library:CreateWindow(title, opts)
                     Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1, LayoutOrder = 0, Parent = Content,
                 })
-
+ 
                 local pillTabs = {}
                 for i, pname in ipairs(names) do
                     local Pill = panel({
@@ -580,7 +580,7 @@ function Library:CreateWindow(title, opts)
                         BackgroundTransparency = 1, Visible = false, Parent = PagesFrame,
                     })
                     new("UIListLayout", { Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = PPage })
-
+ 
                     local function selectPill()
                         for _, p in ipairs(pillTabs) do
                             p.Page.Visible = false
@@ -592,36 +592,36 @@ function Library:CreateWindow(title, opts)
                         PillLbl.TextColor3 = Theme.Text
                     end
                     PillClick.MouseButton1Click:Connect(selectPill)
-
+ 
                     local entry = { Pill = Pill, Lbl = PillLbl, Page = PPage }
                     table.insert(pillTabs, entry)
                     if i == 1 then selectPill() end
                 end
-
+ 
                 local result = {}
                 for i, pname in ipairs(names) do
                     result[pname] = attachElements(pillTabs[i].Page)
                 end
                 return result
             end
-
+ 
             return BoxObj
         end
-
+ 
         return TabObj
     end
-
+ 
     return Window
 end
-
+ 
 return Library
-
+ 
 --[[
     EXAMPLE:
-
+ 
     local Library = loadstring(readfile("ModernUILibrary.lua"))()
     local Window = Library:CreateWindow("fracture")
-
+ 
     local Visuals = Window:CreateTab("Visuals")
     local Box1 = Visuals:CreateBox("ESP", 1)
     local pills = Box1:CreatePillTabs({"Enemy", "Team", "Local"})
@@ -629,10 +629,10 @@ return Library
     pills["Enemy"]:AddCheckbox("Box", false)
     pills["Enemy"]:AddColorPicker("Box Color", Color3.fromRGB(255, 165, 0))
     pills["Enemy"]:AddSlider("Render Distance", 0, 5000, 2500, nil, "m")
-
+ 
     local Box2 = Visuals:CreateBox("Camera", 2)
     Box2:AddButton("Reset Camera", function() end)
-
+ 
     local Settings = Window:CreateTab("Settings")
     local Box3 = Settings:CreateBox("Appearance", 1)
     Box3:AddAccentPicker("Accent Color")

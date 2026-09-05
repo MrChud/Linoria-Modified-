@@ -8,13 +8,15 @@ SaveManager.__index = SaveManager
 SaveManager.Folder = "ModernUI"
 SaveManager.Ext    = ".json"
 
-local WindowRef = nil
-local ThemeRef  = nil
+local WindowRef   = nil
+local ThemeRef    = nil
 local LoadOnStart = false
 local LastConfig  = nil
 
 
--- stable unique address: Tab|Box|Section|Key (Section only for pill tabs)
+---------------------------------------------------------------------
+-- serialization helpers
+---------------------------------------------------------------------
 local function joinEntry(e)
     local parts = { e.Tab, e.Box, e.Section, e.Key }
     local out = {}
@@ -52,6 +54,9 @@ local function decodeValue(etype, val)
 end
 
 
+---------------------------------------------------------------------
+-- folder / global marker
+---------------------------------------------------------------------
 function SaveManager:SetFolder(name)
     self.Folder = tostring(name)
     return self
@@ -66,7 +71,6 @@ end
 
 function SaveManager:EnsureFolder()
     if not (isfolder and makefolder and writefile and readfile and isfile) then return false end
-    -- folder can be nested (e.g. "ModernUI/Defusal") — create each level
     local path = ""
     for part in self.Folder:gmatch("[^/]+") do
         path = path == "" and part or (path .. "/" .. part)
@@ -102,17 +106,17 @@ function SaveManager:SaveGlobal()
 end
 
 
-function SaveManager:Init(window, loadOnStart)
-    WindowRef = window
-    self:LoadGlobal()
-    if loadOnStart ~= nil then LoadOnStart = loadOnStart end
-    -- deferred so UI has finished building before we restore anything
-    if LoadOnStart and LastConfig then
-        task.defer(function()
-            self:LoadConfig(LastConfig)
-        end)
-    end
-    return self
+---------------------------------------------------------------------
+-- core config operations
+---------------------------------------------------------------------
+local function configPath(self, name)
+    return self.Folder .. "/" .. sanitize(name) .. self.Ext
+end
+
+
+local function configExists(name)
+    local p = configPath(SaveManager, name)
+    return isfile and isfile(p)
 end
 
 
@@ -140,14 +144,17 @@ local function buildSaveData()
     if ThemeRef then data.Theme = ThemeRef.Current end
     local a = WindowRef:GetAccentColor()
     data.Accent = { a.R * 255, a.G * 255, a.B * 255 }
-    data.Window = WindowRef.Tabs and #WindowRef.Tabs or 0 -- keep future compat
+    local bg = WindowRef:GetThemeColor("Background") or Color3.fromRGB(22, 22, 22)
+    data.Background = { bg.R * 255, bg.G * 255, bg.B * 255 }
+    data.BackgroundMode = WindowRef:GetBackgroundMode()
     return data
 end
 
 
-function SaveManager:SaveConfig(name)
+-- CREATE: writes a brand-new config. Refuses to touch one that exists.
+function SaveManager:CreateConfig(name)
     local n = sanitize(name)
-    if n == "" or not WindowRef then return false end
+    if n == "" or configExists(n) or not WindowRef then return false end
     if not self:EnsureFolder() then return false end
     local ok = pcall(writefile, self.Folder .. "/" .. n .. self.Ext, HttpService:JSONEncode(buildSaveData()))
     if ok then
@@ -158,6 +165,26 @@ function SaveManager:SaveConfig(name)
 end
 
 
+-- OVERWRITE: saves over an EXISTING config only (strict).
+function SaveManager:SaveConfig(name)
+    local n = sanitize(name)
+    if n == "" or not configExists(n) or not WindowRef then return false end
+    if not self:EnsureFolder() then return false end
+    local ok = pcall(writefile, self.Folder .. "/" .. n .. self.Ext, HttpService:JSONEncode(buildSaveData()))
+    if ok then
+        LastConfig = n
+        self:SaveGlobal()
+    end
+    return ok
+end
+
+
+function SaveManager:OverwriteConfig(name)
+    return self:SaveConfig(name)
+end
+
+
+-- LOAD: apply a config onto the UI.
 function SaveManager:LoadConfig(name)
     local n = sanitize(name)
     if n == "" or not WindowRef then return false end
@@ -166,14 +193,18 @@ function SaveManager:LoadConfig(name)
     local ok, data = pcall(HttpService.JSONDecode, HttpService, readfile(path))
     if not ok or type(data) ~= "table" then return false end
 
-    -- theme first so accent-linked elements repaint before their state sets
+    -- theme + accent + background first so elements repaint before state sets
     if data.Theme and ThemeRef then
         pcall(function() ThemeRef:ApplyTheme(data.Theme) end)
     elseif data.Accent and type(data.Accent) == "table" then
         WindowRef:SetAccentColor(Color3.fromRGB(data.Accent[1], data.Accent[2], data.Accent[3]))
     end
+    if data.BackgroundMode then WindowRef:SetBackgroundMode(data.BackgroundMode) end
+    if data.Background and type(data.Background) == "table" then
+        WindowRef:SetThemeColor("Background", Color3.fromRGB(data.Background[1], data.Background[2], data.Background[3]))
+    end
 
-    -- restore every element; active tab last so the UI is settled first
+    -- restore every element; active tab last so the layout is settled
     local deferred
     if type(data.UI) == "table" then
         for _, e in ipairs(WindowRef.Elements) do
@@ -196,6 +227,7 @@ function SaveManager:LoadConfig(name)
 end
 
 
+-- DELETE: remove a config file.
 function SaveManager:DeleteConfig(name)
     local n = sanitize(name)
     local path = self.Folder .. "/" .. n .. self.Ext
@@ -212,10 +244,13 @@ end
 
 
 function SaveManager:RenameConfig(oldName, newName)
+    if not configExists(oldName) or configExists(newName) then return false end
     if not self:LoadConfig(oldName) then return false end
-    self:SaveConfig(newName)
+    local wrote = self:SaveConfig(newName) -- SaveConfig requires existing -> use CreateConfig
+    -- (SaveConfig is strict overwrite, so use CreateConfig for the fresh name)
+    wrote = self:CreateConfig(newName)
     self:DeleteConfig(oldName)
-    return true
+    return wrote
 end
 
 
@@ -225,7 +260,30 @@ function SaveManager:LoadLastConfig()
 end
 
 
--- builds the full config UI automatically on a box you already have
+---------------------------------------------------------------------
+-- init + auto-load
+---------------------------------------------------------------------
+function SaveManager:Init(window, loadOnStart)
+    WindowRef = window
+    self:LoadGlobal()
+    if loadOnStart ~= nil then LoadOnStart = loadOnStart end
+    if LoadOnStart and LastConfig then
+        task.defer(function()
+            if WindowRef then self:LoadConfig(LastConfig) end
+        end)
+    end
+    return self
+end
+
+
+---------------------------------------------------------------------
+-- UI: create / overwrite / load / delete
+---------------------------------------------------------------------
+local function refreshCombo(combo)
+    combo.SetOptions(SaveManager:ListConfigs())
+end
+
+
 function SaveManager:AddConfigBox(box, opts)
     opts = opts or {}
     box:AddLabel(opts.Label or "Configs")
@@ -233,8 +291,13 @@ function SaveManager:AddConfigBox(box, opts)
     local nameTb = box:AddTextBox(opts.NameLabel or "Config Name")
     nameTb:Set(LastConfig or "")
 
-    local combo = box:AddCombo(opts.ComboLabel or "Config List", self:ListConfigs(), LastConfig, function(v)
-        if v and v ~= "" then self:LoadConfig(v) end
+    local combo = box:AddCombo(opts.ComboLabel or "Configs", self:ListConfigs(), LastConfig, function(v)
+        -- picking a config from the list LOADS it
+        if v and v ~= "" then
+            if self:LoadConfig(v) then
+                nameTb:Set(v)
+            end
+        end
     end)
 
     box:AddCheckbox(opts.OnStartLabel or "Load on Start", LoadOnStart, function(v)
@@ -242,35 +305,53 @@ function SaveManager:AddConfigBox(box, opts)
         if LoadOnStart and LastConfig then self:SaveGlobal() end
     end)
 
-    box:AddButton("Save", function()
+    -- CREATE: brand-new config only
+    box:AddButton(opts.CreateLabel or "Create", function()
         local n = nameTb:Get()
+        if n and n ~= "" then
+            if self:CreateConfig(n) then
+                nameTb:Set(n)
+                refreshCombo(combo)
+                combo:Set(n)
+            end
+        end
+    end)
+
+    -- OVERWRITE: save current settings over an existing config
+    box:AddButton(opts.OverwriteLabel or "Overwrite", function()
+        local n = nameTb:Get()
+        if n == "" then n = combo:Get() end
         if n and n ~= "" and self:SaveConfig(n) then
             nameTb:Set(n)
-            combo.SetOptions(self:ListConfigs())
+            combo:Set(n)
         end
     end)
 
-    box:AddButton("Load", function()
+    -- LOAD: by typed name (or current selection)
+    box:AddButton(opts.LoadLabel or "Load", function()
         local n = nameTb:Get()
+        if n == "" then n = combo:Get() end
         if n and n ~= "" and self:LoadConfig(n) then
             nameTb:Set(n)
-            combo.SetOptions(self:ListConfigs())
+            combo:Set(n)
         end
     end)
 
-    box:AddButton("Delete", function()
-        local n = combo:Get() or nameTb:Get()
+    -- DELETE (red, destructive)
+    box:AddButton(opts.DeleteLabel or "Delete", function()
+        local n = combo:Get()
+        if n == "" or not n then n = nameTb:Get() end
         if n and n ~= "" and self:DeleteConfig(n) then
             nameTb:Set("")
-            combo.SetOptions(self:ListConfigs())
+            refreshCombo(combo)
         end
-    end, true)  -- red label, destructive
+    end, true)
 
     return combo
 end
 
 
--- convenience: makes the config box for you on a tab — you only pass the tab
+-- convenience: creates the box on a tab for you — only the tab is required
 function SaveManager:AddConfigSection(tab, opts)
     opts = opts or {}
     local box = tab:CreateBox(opts.Title or "Configs", opts.Column or 1)

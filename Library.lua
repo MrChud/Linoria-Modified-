@@ -506,7 +506,7 @@ function Library:CreateWindow(title, opts)
                     BackgroundColor3 = Theme.Track, Parent = Row,
                 })
                 local Fill = new("Frame", {
-                    Size = UDim2.new(1, -4, 1, -4), Position = UDim2.new(0, 2, 0, 2),
+                    Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0),
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
                     Visible = state, Parent = Sq,
                 })

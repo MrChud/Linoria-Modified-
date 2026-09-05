@@ -1,250 +1,312 @@
-local httpService = game:GetService('HttpService')
-local ThemeManager = {} do
-	ThemeManager.Folder = 'LinoriaLibSettings'
-	-- if not isfolder(ThemeManager.Folder) then makefolder(ThemeManager.Folder) end
 
-	ThemeManager.Library = nil
-	ThemeManager.BuiltInThemes = {
-		['Default'] 		= { 1, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
-		['BBot'] 			= { 2, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
-		['Fatality']		= { 3, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d"}') },
-		['Jester'] 			= { 4, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
-		['Mint'] 			= { 5, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
-		['Tokyo Night'] 	= { 6, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232"}') },
-		['Ubuntu'] 			= { 7, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
-		['Quartz'] 			= { 8, httpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') },
-	}
 
-	function ThemeManager:ApplyTheme(theme)
-		local customThemeData = self:GetCustomTheme(theme)
-		local data = customThemeData or self.BuiltInThemes[theme]
+local HttpService = game:GetService("HttpService")
 
-		if not data then return end
+local ThemeManager = {}
+ThemeManager.__index = ThemeManager
 
-		-- custom themes are just regular dictionaries instead of an array with { index, dictionary }
+ThemeManager.Folder = "ModernUI"
+ThemeManager.Ext    = ".json"
 
-		local scheme = data[2]
-		for idx, col in next, customThemeData or scheme do
-			self.Library[idx] = Color3.fromHex(col)
-			
-			if Options[idx] then
-				Options[idx]:SetValueRGB(Color3.fromHex(col))
-			end
-		end
+-- Builtin presets: each carries Accent + Background (extra keys allowed).
+ThemeManager.BuiltinThemes = {
+    Default = {
+        Accent     = Color3.fromRGB(128, 140, 160),
+        Background = Color3.fromRGB(22, 22, 25),
+    },
+    Ocean = {
+        Accent     = Color3.fromRGB(0, 168, 255),
+        Background = Color3.fromRGB(12, 20, 32),
+    },
+    Fire = {
+        Accent     = Color3.fromRGB(255, 84, 32),
+        Background = Color3.fromRGB(28, 14, 12),
+    },
+    Lime = {
+        Accent     = Color3.fromRGB(100, 225, 80),
+        Background = Color3.fromRGB(10, 26, 14),
+    },
+    Royal = {
+        Accent     = Color3.fromRGB(130, 90, 255),
+        Background = Color3.fromRGB(18, 16, 30),
+    },
+    Galaxy = {
+        Accent     = Color3.fromRGB(200, 120, 255),
+        Background = Color3.fromRGB(10, 10, 28),
+    },
+}
 
-		self:ThemeUpdate()
-	end
+local WindowRef  = nil
+local Custom     = {}                 -- name -> {Accent=Color3, Background=Color3}
+local Current    = "Default"
+local BgMode     = "Solid"
+local saveTask   = nil
 
-	function ThemeManager:ThemeUpdate()
-		-- This allows us to force apply themes without loading the themes tab :)
-		local options = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
-		for i, field in next, options do
-			if Options and Options[field] then
-				self.Library[field] = Options[field].Value
-			end
-		end
+local pickerBox, themeCombo, accentSlider, bgSlider, modeCombo, nameTb
 
-		self.Library.AccentColorDark = self.Library:GetDarkerColor(self.Library.AccentColor);
-		self.Library:UpdateColorsUsingRegistry()
-	end
 
-	function ThemeManager:LoadDefault()		
-		local theme = 'Default'
-		local content = isfile(self.Folder .. '/themes/default.txt') and readfile(self.Folder .. '/themes/default.txt')
+---------------------------------------------------------------------
+-- serialization
+---------------------------------------------------------------------
+local function c3t(c)  return { math.round(c.R * 255), math.round(c.G * 255), math.round(c.B * 255) } end
+local function t3c(t)  return Color3.fromRGB(math.clamp(t[1], 0, 255), math.clamp(t[2], 0, 255), math.clamp(t[3], 0, 255)) end
 
-		local isDefault = true
-		if content then
-			if self.BuiltInThemes[content] then
-				theme = content
-			elseif self:GetCustomTheme(content) then
-				theme = content
-				isDefault = false;
-			end
-		elseif self.BuiltInThemes[self.DefaultTheme] then
-		 	theme = self.DefaultTheme
-		end
 
-		if isDefault then
-			Options.ThemeManager_ThemeList:SetValue(theme)
-		else
-			self:ApplyTheme(theme)
-		end
-	end
-
-	function ThemeManager:SaveDefault(theme)
-		writefile(self.Folder .. '/themes/default.txt', theme)
-	end
-
-	function ThemeManager:CreateThemeManager(groupbox)
-		groupbox:AddLabel('Background color'):AddColorPicker('BackgroundColor', { Default = self.Library.BackgroundColor });
-		groupbox:AddLabel('Main color')	:AddColorPicker('MainColor', { Default = self.Library.MainColor });
-		groupbox:AddLabel('Accent color'):AddColorPicker('AccentColor', { Default = self.Library.AccentColor });
-		groupbox:AddLabel('Outline color'):AddColorPicker('OutlineColor', { Default = self.Library.OutlineColor });
-		groupbox:AddLabel('Font color')	:AddColorPicker('FontColor', { Default = self.Library.FontColor });
-
-		local ThemesArray = {}
-		for Name, Theme in next, self.BuiltInThemes do
-			table.insert(ThemesArray, Name)
-		end
-
-		table.sort(ThemesArray, function(a, b) return self.BuiltInThemes[a][1] < self.BuiltInThemes[b][1] end)
-
-		groupbox:AddDivider()
-		groupbox:AddDropdown('ThemeManager_ThemeList', { Text = 'Theme list', Values = ThemesArray, Default = 1 })
-
-		groupbox:AddButton('Set as default', function()
-			self:SaveDefault(Options.ThemeManager_ThemeList.Value)
-			self.Library:Notify(string.format('Set default theme to %q', Options.ThemeManager_ThemeList.Value))
-		end)
-
-		Options.ThemeManager_ThemeList:OnChanged(function()
-			self:ApplyTheme(Options.ThemeManager_ThemeList.Value)
-		end)
-
-		groupbox:AddDivider()
-		groupbox:AddInput('ThemeManager_CustomThemeName', { Text = 'Custom theme name' })
-		groupbox:AddDropdown('ThemeManager_CustomThemeList', { Text = 'Custom themes', Values = self:ReloadCustomThemes(), AllowNull = true, Default = 1 })
-		groupbox:AddDivider()
-		
-		groupbox:AddButton('Save theme', function() 
-			self:SaveCustomTheme(Options.ThemeManager_CustomThemeName.Value)
-
-			Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
-			Options.ThemeManager_CustomThemeList:SetValue(nil)
-		end):AddButton('Load theme', function() 
-			self:ApplyTheme(Options.ThemeManager_CustomThemeList.Value) 
-		end)
-
-		groupbox:AddButton('Refresh list', function()
-			Options.ThemeManager_CustomThemeList:SetValues(self:ReloadCustomThemes())
-			Options.ThemeManager_CustomThemeList:SetValue(nil)
-		end)
-
-		groupbox:AddButton('Set as default', function()
-			if Options.ThemeManager_CustomThemeList.Value ~= nil and Options.ThemeManager_CustomThemeList.Value ~= '' then
-				self:SaveDefault(Options.ThemeManager_CustomThemeList.Value)
-				self.Library:Notify(string.format('Set default theme to %q', Options.ThemeManager_CustomThemeList.Value))
-			end
-		end)
-
-		ThemeManager:LoadDefault()
-
-		local function UpdateTheme()
-			self:ThemeUpdate()
-		end
-
-		Options.BackgroundColor:OnChanged(UpdateTheme)
-		Options.MainColor:OnChanged(UpdateTheme)
-		Options.AccentColor:OnChanged(UpdateTheme)
-		Options.OutlineColor:OnChanged(UpdateTheme)
-		Options.FontColor:OnChanged(UpdateTheme)
-	end
-
-	function ThemeManager:GetCustomTheme(file)
-		local path = self.Folder .. '/themes/' .. file
-		if not isfile(path) then
-			return nil
-		end
-
-		local data = readfile(path)
-		local success, decoded = pcall(httpService.JSONDecode, httpService, data)
-		
-		if not success then
-			return nil
-		end
-
-		return decoded
-	end
-
-	function ThemeManager:SaveCustomTheme(file)
-		if file:gsub(' ', '') == '' then
-			return self.Library:Notify('Invalid file name for theme (empty)', 3)
-		end
-
-		local theme = {}
-		local fields = { "FontColor", "MainColor", "AccentColor", "BackgroundColor", "OutlineColor" }
-
-		for _, field in next, fields do
-			theme[field] = Options[field].Value:ToHex()
-		end
-
-		writefile(self.Folder .. '/themes/' .. file .. '.json', httpService:JSONEncode(theme))
-	end
-
-	function ThemeManager:ReloadCustomThemes()
-		local list = listfiles(self.Folder .. '/themes')
-
-		local out = {}
-		for i = 1, #list do
-			local file = list[i]
-			if file:sub(-5) == '.json' then
-				-- i hate this but it has to be done ...
-
-				local pos = file:find('.json', 1, true)
-				local char = file:sub(pos, pos)
-
-				while char ~= '/' and char ~= '\\' and char ~= '' do
-					pos = pos - 1
-					char = file:sub(pos, pos)
-				end
-
-				if char == '/' or char == '\\' then
-					table.insert(out, file:sub(pos + 1))
-				end
-			end
-		end
-
-		return out
-	end
-
-	function ThemeManager:SetLibrary(lib)
-		self.Library = lib
-	end
-
-	function ThemeManager:BuildFolderTree()
-		local paths = {}
-
-		-- build the entire tree if a path is like some-hub/phantom-forces
-		-- makefolder builds the entire tree on Synapse X but not other exploits
-
-		local parts = self.Folder:split('/')
-		for idx = 1, #parts do
-			paths[#paths + 1] = table.concat(parts, '/', 1, idx)
-		end
-
-		table.insert(paths, self.Folder .. '/themes')
-		table.insert(paths, self.Folder .. '/settings')
-
-		for i = 1, #paths do
-			local str = paths[i]
-			if not isfolder(str) then
-				makefolder(str)
-			end
-		end
-	end
-
-	function ThemeManager:SetFolder(folder)
-		self.Folder = folder
-		self:BuildFolderTree()
-	end
-
-	function ThemeManager:CreateGroupBox(tab)
-		assert(self.Library, 'Must set ThemeManager.Library first!')
-		return tab:AddLeftGroupbox('Themes')
-	end
-
-	function ThemeManager:ApplyToTab(tab)
-		assert(self.Library, 'Must set ThemeManager.Library first!')
-		local groupbox = self:CreateGroupBox(tab)
-		self:CreateThemeManager(groupbox)
-	end
-
-	function ThemeManager:ApplyToGroupbox(groupbox)
-		assert(self.Library, 'Must set ThemeManager.Library first!')
-		self:CreateThemeManager(groupbox)
-	end
-
-	ThemeManager:BuildFolderTree()
+function ThemeManager:SetFolder(name)
+    self.Folder = tostring(name)
+    return self
 end
+
+
+function ThemeManager:EnsureFolder()
+    if not (isfolder and makefolder) then return false end
+    local path = ""
+    for part in self.Folder:gmatch("[^/]+") do
+        path = path == "" and part or (path .. "/" .. part)
+        if not isfolder(path) then makefolder(path) end
+    end
+    return true
+end
+
+
+local function themesPath()
+    return ThemeManager.Folder .. "/themes" .. ThemeManager.Ext
+end
+
+
+---------------------------------------------------------------------
+-- save / load (debounced)
+---------------------------------------------------------------------
+function ThemeManager:ScheduleSave()
+    if saveTask then saveTask:Cancel() end
+    saveTask = task.delay(1, function()
+        saveTask = nil
+        self:Save()
+    end)
+end
+
+
+function ThemeManager:Save()
+    if not self:EnsureFolder() then return end
+    local payload = {
+        Current        = Current,
+        BackgroundMode = BgMode,
+        Custom         = Custom,
+    }
+    local encoded = {}
+    for name, th in pairs(Custom) do
+        encoded[name] = { Accent = c3t(th.Accent), Background = c3t(th.Background) }
+    end
+    payload.Custom = encoded
+    pcall(writefile, themesPath(), HttpService:JSONEncode(payload))
+end
+
+
+function ThemeManager:Load()
+    if not (isfile and isfile(themesPath())) then return end
+    local ok, data = pcall(HttpService.JSONDecode, HttpService, readfile(themesPath()))
+    if not ok or type(data) ~= "table" then return end
+    if type(data.Custom) == "table" then
+        for name, th in pairs(data.Custom) do
+            if type(th) == "table" and th.Accent and th.Background then
+                Custom[name] = { Accent = t3c(th.Accent), Background = t3c(th.Background) }
+            end
+        end
+    end
+    if data.BackgroundMode == "Solid" or data.BackgroundMode == "Gradient" then
+        BgMode = data.BackgroundMode
+    end
+    if type(data.Current) == "string" then
+        Current = data.Current
+    end
+end
+
+
+---------------------------------------------------------------------
+-- applying
+---------------------------------------------------------------------
+local function unresolvedTheme(name)
+    if ThemeManager.BuiltinThemes[name] then return ThemeManager.BuiltinThemes[name] end
+    return Custom[name]
+end
+
+
+-- Apply a theme by name (preset or custom). Returns false if unknown.
+function ThemeManager:ApplyTheme(name)
+    if not WindowRef then return false end
+    local th = unresolvedTheme(name)
+    if not th then return false end
+
+    Current = name
+    for k, v in pairs(th) do
+        if k ~= "Accent" then
+            WindowRef:SetThemeColor(k, v, true)
+        end
+    end
+    WindowRef:SetAccentColor(th.Accent or WindowRef:GetThemeColor("Accent"), true)
+
+    -- auto-stick to Custom for the picker dropdown so edits feel live
+    self:ScheduleSave()
+    self:syncUI()
+    return true
+end
+
+
+function ThemeManager:GetAccent()
+    if not WindowRef then return Color3.fromRGB(128, 140, 160) end
+    return WindowRef:GetAccentColor()
+end
+
+
+function ThemeManager:GetBackground()
+    if not WindowRef then return Color3.fromRGB(22, 22, 25) end
+    return WindowRef:GetThemeColor("Background")
+end
+
+
+-- touching color sliders switches to a live "Custom" theme
+local function switchToCustom(accent, background)
+    Current = "Custom"
+    if accent     then WindowRef:SetAccentColor(accent) end
+    if background then WindowRef:SetThemeColor("Background", background) end
+    ThemeManager:ScheduleSave()
+    ThemeManager:syncUI()
+end
+
+
+function ThemeManager:SetAccentColor(color)
+    switchToCustom(color, nil)
+end
+
+
+function ThemeManager:SetBackgroundColor(color)
+    switchToCustom(nil, color)
+end
+
+
+function ThemeManager:SetBackgroundMode(mode)
+    if mode ~= "Solid" and mode ~= "Gradient" then return end
+    BgMode = mode
+    WindowRef:SetBackgroundMode(mode)
+    ThemeManager:ScheduleSave()
+    ThemeManager:syncUI()
+end
+
+
+function ThemeManager:GetBackgroundMode()
+    return BgMode
+end
+
+
+-- Save current visuals under a named template (added to the dropdown).
+function ThemeManager:AddTheme(name)
+    name = tostring(name):gsub("^%s+", ""):gsub("%s+$", "")
+    if name == "" or name == "Custom" or ThemeManager.BuiltinThemes[name] then return false end
+    Custom[name] = { Accent = self:GetAccent(), Background = self:GetBackground() }
+    Current = name
+    self:ScheduleSave()
+    self:syncUI()
+    return true
+end
+
+
+function ThemeManager:RemoveTheme(name)
+    if not Custom[name] then return false end
+    Custom[name] = nil
+    Current = "Default"
+    self:ScheduleSave()
+    self:ApplyTheme("Default")
+    self:syncUI()
+    return true
+end
+
+
+---------------------------------------------------------------------
+-- build the picker UI (needs an existing tab)
+---------------------------------------------------------------------
+local function themeNames()
+    local out = {}
+    for name in pairs(ThemeManager.BuiltinThemes) do table.insert(out, name) end
+    for name in pairs(Custom) do table.insert(out, name) end
+    table.insert(out, "Custom")
+    return out
+end
+
+
+function ThemeManager:syncUI()
+    if not pickerBox then return end
+    if themeCombo  then themeCombo:SetOptions(themeNames()) themeCombo:Set(Current) end
+    if nameTb      then nameTb:Set("") end
+
+    local th = unresolvedTheme(Current) or (Current == "Custom" and nil)
+    local accent, background
+    if th then
+        accent    = th.Accent
+        background = th.Background
+    end
+    local curAccent = accent or self:GetAccent()
+    local curBg     = background or self:GetBackground()
+
+    if accentSlider then accentSlider:Set(curAccent) end
+    if bgSlider     then bgSlider:Set(curBg) end
+    if modeCombo    then modeCombo:Set(BgMode) end
+end
+
+
+function ThemeManager:AddThemePicker(tab, opts)
+    opts = opts or {}
+
+    -- fallback: a pre-selected accent/background if none applied yet
+    if not WindowRef:GetThemeColor("Accent") then
+        WindowRef:SetAccentColor(ThemeManager.BuiltinThemes.Default.Accent, true)
+    end
+    if not WindowRef:GetThemeColor("Background") then
+        WindowRef:SetThemeColor("Background", ThemeManager.BuiltinThemes.Default.Background, true)
+    end
+
+    pickerBox = tab:CreateBox(opts.Title or "Theme", opts.Column or 1)
+    pickerBox:AddLabel("Theme")
+
+    themeCombo = pickerBox:AddCombo("Themes", themeNames(), Current, function(v)
+        if v and ThemeManager:ApplyTheme(v) then end
+    end)
+
+    accentSlider = pickerBox:AddHueSlider("Accent Color", self:GetAccent(), function(c)
+        ThemeManager:SetAccentColor(c)
+    end)
+
+    modeCombo = pickerBox:AddCombo("Background Mode", { "Solid", "Gradient" }, BgMode, function(v)
+        ThemeManager:SetBackgroundMode(v)
+    end)
+
+    bgSlider = pickerBox:AddHueSlider("Background Color", self:GetBackground(), function(c)
+        ThemeManager:SetBackgroundColor(c)
+    end)
+
+    pickerBox:AddDivider()
+
+    nameTb = pickerBox:AddTextBox("Theme Name", "", function(v) end)
+    pickerBox:AddButton("Save Theme", function()
+        if nameTb then ThemeManager:AddTheme(nameTb:Get()) end
+    end)
+    pickerBox:AddButton("Delete Theme", function()
+        ThemeManager:RemoveTheme(Current)
+    end, true)
+
+    return pickerBox
+end
+
+
+---------------------------------------------------------------------
+-- init
+---------------------------------------------------------------------
+function ThemeManager:Init(window)
+    WindowRef = window
+    self:Load()
+    self:ApplyTheme(Current)
+    WindowRef:SetBackgroundMode(BgMode)
+    return self
+end
+
 
 return ThemeManager

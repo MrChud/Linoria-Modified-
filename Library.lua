@@ -1,8 +1,10 @@
 --[[
     ModernUI Library — old/plain cheat-menu skin
-    Square corners, thin accent outlines, default Roblox font, flat colors.
+    Square corners, flat colors, default Roblox font.
     Structure: top plain tab row -> 2-column boxed panels -> plain
     checkboxes/sliders/dropdowns/keybinds. Footer bar at the bottom.
+    Accent outline only on the menu itself; group boxes get an accent
+    divider under their title.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -33,8 +35,7 @@ local Theme = {
 local FONT = Enum.Font.SourceSans
 local FONT_BOLD = Enum.Font.SourceSansBold
 
---// Accent registry — everything outline/accent-tinted follows this.
---// Registered lazily (fill frames, strokes) then updated on change.
+--// Accent registry — accent-colored elements update together
 local AccentListeners = {}
 local function onAccent(fn)
     table.insert(AccentListeners, fn)
@@ -53,19 +54,13 @@ local function new(class, props, children)
     return inst
 end
 
--- plain, boxy panel with a thin accent-colored outline
+-- plain, boxy panel: square corners, native 1px border (no UIStroke/UICorner)
 local function panel(props)
     props = props or {}
-    props.BorderSizePixel = 0
-    local frame = new("Frame", props)
-    local stroke = new("UIStroke", {
-        Color = Theme.Accent,
-        Thickness = 1,
-        Transparency = 0,
-        Parent = frame,
-    })
-    onAccent(function(c) stroke.Color = c end)
-    return frame
+    props.BorderSizePixel = 1
+    props.BorderColor3 = props.BorderColor3 or Theme.Border
+    props.BackgroundColor3 = props.BackgroundColor3 or Theme.Panel
+    return new("Frame", props)
 end
 
 local function pad(parent, x, y)
@@ -107,7 +102,7 @@ local function makeDraggable(handle, target)
     end)
 end
 
--- plain flat hue strip (used for color pickers) — thin accent outline
+-- plain flat hue strip (used for color pickers) — no gradient border/rounding
 local function buildHueSlider(parent, onChange)
     local Track = panel({ Size = UDim2.new(1, 0, 0, 8), Parent = parent, BackgroundColor3 = Theme.Track })
     new("UIGradient", {
@@ -175,6 +170,15 @@ function Library:CreateWindow(title, opts)
         BackgroundColor3 = Theme.Background,
         Parent = ScreenGui,
     })
+
+    -- accent outline around the whole menu only
+    local MainStroke = new("UIStroke", {
+        Color = Theme.Accent,
+        Thickness = 1,
+        Transparency = 0,
+        Parent = Main,
+    })
+    onAccent(function(c) MainStroke.Color = c end)
 
     local TitleBar = panel({
         Size = UDim2.new(1, 0, 0, 20),
@@ -553,6 +557,17 @@ function Library:CreateWindow(title, opts)
                 BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -20, 1, 0),
                 TextXAlignment = Enum.TextXAlignment.Left, Parent = Header,
             })
+
+            -- accent divider line just below the group box title
+            local Divider = new("Frame", {
+                Size = UDim2.new(1, 0, 0, 1),
+                Position = UDim2.new(0, 0, 1, -1),
+                BackgroundColor3 = Theme.Accent,
+                BorderSizePixel = 0,
+                Parent = Header,
+            })
+            onAccent(function(c) Divider.BackgroundColor3 = c end)
+
             local CollapseBtn = new("TextButton", {
                 Text = "-", Font = FONT_BOLD, TextSize = 13, TextColor3 = Theme.SubText,
                 BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),

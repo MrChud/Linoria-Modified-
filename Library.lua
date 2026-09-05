@@ -35,6 +35,7 @@
 
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -262,11 +263,12 @@ function Library:CreateWindow(title, opts)
     })
     pad(PageHolder, 4, 4)
 
-    -- === floating color picker popup (item 3) ===
-    -- one shared popup per window; opening a color swatch re-targets it
+    -- === floating color picker popup (item 3, redone bigger/clearer) ===
+    -- one shared popup per window; opening a color swatch re-targets it and
+    -- moves it near wherever you clicked
     local ColorPopup = panel({
         Name = "ColorPopup", Visible = false, ZIndex = 50,
-        Size = UDim2.new(0, 170, 0, 150),
+        Size = UDim2.new(0, 190, 0, 210),
         Position = UDim2.new(0.5, WINDOW_W / 2 + 6, 0.5, -WINDOW_H / 2),
         BackgroundColor3 = Theme.Panel, Parent = ScreenGui,
     })
@@ -286,8 +288,9 @@ function Library:CreateWindow(title, opts)
     ColorPopupClose.MouseButton1Click:Connect(function() ColorPopup.Visible = false end)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
+    -- step 1: the saturation/value square — drag here after picking a hue
     local SVSquare = new("Frame", {
-        Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 90),
+        Position = UDim2.new(0, 8, 0, 22), Size = UDim2.new(1, -16, 0, 130),
         BackgroundColor3 = Color3.fromHSV(0, 1, 1), BorderSizePixel = 1, BorderColor3 = Theme.Border,
         ZIndex = 51, ClipsDescendants = true, Parent = ColorPopup,
     })
@@ -301,14 +304,37 @@ function Library:CreateWindow(title, opts)
         ZIndex = 52, Parent = SVSquare,
     })
     new("UIGradient", { Transparency = NumberSequence.new(1, 0), Rotation = 90, Parent = BlackOverlay })
-    local SVCursor = new("Frame", {
-        Size = UDim2.new(0, 6, 0, 6), BackgroundTransparency = 1,
-        BorderSizePixel = 1, BorderColor3 = Color3.new(1, 1, 1), ZIndex = 53, Parent = SVSquare,
+    -- cursor: black outer ring + white inner ring, so it stays visible
+    -- against light AND dark parts of the square (a plain white square was
+    -- invisible on the white corner — that's the "horrible" part)
+    local SVCursorOuter = new("Frame", {
+        Size = UDim2.new(0, 10, 0, 10), BackgroundTransparency = 1,
+        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0), ZIndex = 53, Parent = SVSquare,
+    })
+    local SVCursorInner = new("Frame", {
+        Size = UDim2.new(1, -4, 1, -4), Position = UDim2.new(0, 2, 0, 2),
+        BackgroundTransparency = 1, BorderSizePixel = 1, BorderColor3 = Color3.new(1, 1, 1),
+        ZIndex = 54, Parent = SVCursorOuter,
+    })
+    local function setSVCursor(relX, relY)
+        SVCursorOuter.Position = UDim2.new(relX, -5, relY, -5)
+    end
+
+    -- step 2: hue slider — pick this FIRST, it sets the square's base color
+    local HueHolder = new("Frame", {
+        Position = UDim2.new(0, 8, 0, 158), Size = UDim2.new(1, -16, 0, 12),
+        BackgroundTransparency = 1, ZIndex = 51, Parent = ColorPopup,
     })
 
-    local HueHolder = new("Frame", {
-        Position = UDim2.new(0, 8, 0, 118), Size = UDim2.new(1, -16, 0, 10),
-        BackgroundTransparency = 1, ZIndex = 51, Parent = ColorPopup,
+    -- live preview: swatch + hex readout so you can actually see it's working
+    local PreviewSwatch = panel({
+        Position = UDim2.new(0, 8, 0, 178), Size = UDim2.new(0, 18, 0, 18),
+        BackgroundColor3 = Color3.new(1, 1, 1), ZIndex = 51, Parent = ColorPopup,
+    })
+    local PreviewHex = new("TextLabel", {
+        Text = "#FFFFFF", Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Position = UDim2.new(0, 30, 0, 178), Size = UDim2.new(1, -38, 0, 18),
+        TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 51, Parent = ColorPopup,
     })
 
     local popupHue, popupSat, popupVal = 0, 1, 1
@@ -316,6 +342,8 @@ function Library:CreateWindow(title, opts)
 
     local function recomputeColor()
         local c = Color3.fromHSV(popupHue, popupSat, popupVal)
+        PreviewSwatch.BackgroundColor3 = c
+        PreviewHex.Text = "#" .. c:ToHex():upper()
         if popupApply then popupApply(c) end
         return c
     end
@@ -331,7 +359,7 @@ function Library:CreateWindow(title, opts)
         local relY = math.clamp((input.Position.Y - SVSquare.AbsolutePosition.Y) / SVSquare.AbsoluteSize.Y, 0, 1)
         popupSat = relX
         popupVal = 1 - relY
-        SVCursor.Position = UDim2.new(relX, -3, relY, -3)
+        setSVCursor(relX, relY)
         recomputeColor()
     end
     local svDragging = false
@@ -352,14 +380,19 @@ function Library:CreateWindow(title, opts)
         end
     end)
 
-    local function openColorPopup(initialColor, applyFn, popupTitle)
+    local function openColorPopup(initialColor, applyFn, popupTitle, nearPos)
         local h, s, v = initialColor:ToHSV()
         popupHue, popupSat, popupVal = h, s, v
         popupApply = applyFn
         ColorPopupTitle.Text = popupTitle or "Color"
         SVSquare.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-        SVCursor.Position = UDim2.new(s, -3, 1 - v, -3)
+        setSVCursor(s, 1 - v)
         hueCtl.SetHue(h)
+        PreviewSwatch.BackgroundColor3 = initialColor
+        PreviewHex.Text = "#" .. initialColor:ToHex():upper()
+        if nearPos then
+            ColorPopup.Position = UDim2.new(0, nearPos.X + 16, 0, math.max(0, nearPos.Y - 60))
+        end
         ColorPopup.Visible = true
     end
 
@@ -386,10 +419,15 @@ function Library:CreateWindow(title, opts)
     end
 
     function Window:CreateTab(name)
+        -- item 2 (this list): tabs now measure their actual text with
+        -- TextService instead of guessing "#name * 8" — that guess was off
+        -- for anything that wasn't short/plain text, which is why tabs
+        -- looked randomly too tight or too wide before.
+        local measured = TextService:GetTextSize(name, 13, FONT, Vector2.new(1000, 20))
         local TabBtn = new("TextButton", {
             Text = name, Font = FONT, TextSize = 13, TextColor3 = Theme.SubText,
-            BackgroundColor3 = Theme.Header, BorderSizePixel = 1, BorderColor3 = Theme.Border, -- item 5: real outline
-            Size = UDim2.new(0, #name * 8 + 16, 1, 0), Parent = TabRow,
+            BackgroundColor3 = Theme.Header, BorderSizePixel = 1, BorderColor3 = Theme.Border,
+            Size = UDim2.new(0, measured.X + 18, 1, 0), Parent = TabRow,
         })
 
         local Page = new("Frame", {
@@ -687,7 +725,7 @@ function Library:CreateWindow(title, opts)
                         color = c
                         Swatch.BackgroundColor3 = c
                         if callback then callback(c) end
-                    end, text)
+                    end, text, Swatch.AbsolutePosition)
                 end)
                 return { Get = function() return color end }
             end

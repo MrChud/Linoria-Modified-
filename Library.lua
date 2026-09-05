@@ -122,15 +122,73 @@ function Library:CreateWindow(title, opts)
         Parent = PlayerGui,
     })
 
+    local WINDOW_W, WINDOW_H = 560, 380
+
+    -- Ambient glow: several stacked, oversized, semi-transparent accent-colored
+    -- frames behind the window. Cheap and asset-free, and it breathes (pulses)
+    -- via a looping tween so the whole window feels "alive".
+    local GlowHolder = new("Frame", {
+        Name = "GlowHolder",
+        Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H),
+        Position = UDim2.new(0.5, -WINDOW_W / 2, 0.5, -WINDOW_H / 2),
+        BackgroundTransparency = 1,
+        ZIndex = 0,
+        Parent = ScreenGui,
+    })
+
+    local GlowLayers = {}
+    for i = 1, 4 do
+        local grow = i * 10
+        local layer = new("Frame", {
+            Size = UDim2.new(1, grow * 2, 1, grow * 2),
+            Position = UDim2.new(0, -grow, 0, -grow),
+            BackgroundColor3 = Theme.Accent,
+            BackgroundTransparency = 1 - (0.05 / i),
+            ZIndex = 0,
+            Parent = GlowHolder,
+        })
+        corner(layer, 16 + grow)
+        table.insert(GlowLayers, layer)
+    end
+
     local Main = new("Frame", {
         Name = "Main",
-        Size = UDim2.new(0, 560, 0, 380),
-        Position = UDim2.new(0.5, -280, 0.5, -190),
+        Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H),
+        Position = UDim2.new(0.5, -WINDOW_W / 2, 0.5, -WINDOW_H / 2),
         BackgroundColor3 = Theme.Background,
+        ClipsDescendants = false,
+        ZIndex = 1,
         Parent = ScreenGui,
     })
     corner(Main, 12)
-    stroke(Main, Theme.Stroke, 1)
+    local MainStroke = stroke(Main, Theme.Accent, 1.5, 0.4)
+
+    -- breathing glow + stroke pulse loop
+    task.spawn(function()
+        while Main.Parent do
+            tween(MainStroke, { Transparency = 0.75 }, 1.4, Enum.EasingStyle.Sine)
+            for i, layer in ipairs(GlowLayers) do
+                tween(layer, { BackgroundTransparency = 1 - (0.03 / i) }, 1.4, Enum.EasingStyle.Sine)
+            end
+            task.wait(1.4)
+            if not Main.Parent then break end
+            tween(MainStroke, { Transparency = 0.35 }, 1.4, Enum.EasingStyle.Sine)
+            for i, layer in ipairs(GlowLayers) do
+                tween(layer, { BackgroundTransparency = 1 - (0.07 / i) }, 1.4, Enum.EasingStyle.Sine)
+            end
+            task.wait(1.4)
+        end
+    end)
+
+    -- open animation: scale + fade in from center
+    Main.Size = UDim2.new(0, WINDOW_W, 0, 0)
+    Main.Position = UDim2.new(0.5, -WINDOW_W / 2, 0.5, 0)
+    GlowHolder.Visible = false
+    tween(Main, {
+        Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H),
+        Position = UDim2.new(0.5, -WINDOW_W / 2, 0.5, -WINDOW_H / 2),
+    }, 0.35, Enum.EasingStyle.Back)
+    task.delay(0.35, function() GlowHolder.Visible = true end)
 
     -- subtle drop shadow via ImageLabel
     new("ImageLabel", {
@@ -202,6 +260,9 @@ function Library:CreateWindow(title, opts)
     end)
 
     makeDraggable(TopBar, Main)
+    Main:GetPropertyChangedSignal("Position"):Connect(function()
+        GlowHolder.Position = Main.Position
+    end)
 
     local TabHolder = new("Frame", {
         Name = "TabHolder",
@@ -233,7 +294,8 @@ function Library:CreateWindow(title, opts)
         if gpe then return end
         if input.KeyCode == toggleKey then
             visible = not visible
-            tween(Main, { Size = visible and UDim2.new(0, 560, 0, 380) or UDim2.new(0, 560, 0, 0) }, 0.22)
+            GlowHolder.Visible = visible
+            tween(Main, { Size = visible and UDim2.new(0, WINDOW_W, 0, WINDOW_H) or UDim2.new(0, WINDOW_W, 0, 0) }, 0.22)
         end
     end)
 
@@ -702,3 +764,21 @@ function Library:CreateWindow(title, opts)
 end
 
 return Library
+
+--[[
+    EXAMPLE:
+
+    local Library = loadstring(readfile("ModernUILibrary.lua"))()
+    local Window = Library:CreateWindow("Modern UI Demo")
+
+    local MainTab = Window:CreateTab("Main")
+    local Combat = MainTab:CreateSection("Combat")
+    Combat:AddToggle("Enabled", false, function(v) print("toggle:", v) end)
+    Combat:AddSlider("Speed", 0, 100, 50, function(v) print("speed:", v) end)
+    Combat:AddDropdown("Mode", {"Easy","Medium","Hard"}, "Easy", function(v) print("mode:", v) end)
+    Combat:AddButton("Do Thing", function() Window:Notify("Button pressed!") end)
+
+    local Settings = MainTab:CreateSection("Settings")
+    Settings:AddKeybind("Toggle UI", Enum.KeyCode.RightControl, function() end)
+    Settings:AddInput("Username", "Enter name...", function(text) print(text) end)
+]]

@@ -44,13 +44,19 @@
         the whole tab row), both updating live with the accent color.
     19. TweenService pass — everything animates now:
           . The tab accent line is one indicator that SLIDES between tab
-            buttons when you switch.
+            buttons when you switch. It lives OUTSIDE the tab layout
+            (tabs sit in their own container) so the layout engine can't
+            fight its position and pin it to the left.
           . Accent color changes tween smoothly instead of snapping
             (except while dragging the accent picker — that stays instant
             or it'd stutter).
           . Hover states fade via tween instead of hard-cutting.
           . Dropdowns slide open/closed with a rotating chevron.
-          . Checkbox fill sweeps in/out.
+          . Checkboxes fill from the CENTER outward (anchored center),
+            not sweeping in from the left.
+          . Color popup fades in when opened and fades out on close.
+          . Groupboxes fade out when collapsed and fade back in when
+            expanded.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -405,7 +411,9 @@ function Library:CreateWindow(title, opts)
     })
 
     -- single accent indicator (item 18/19): slides between tab buttons,
-    -- sits at the TOP of the active one, updates live with accent color
+    -- sits at the TOP of the active one, updates live with accent color.
+    -- It's a DIRECT child of TabRow so the tab layout can't touch it —
+    -- putting it inside the layout is what pinned it to the left.
     local TabIndicator = new("Frame", {
         Name = "TabIndicator",
         Size = UDim2.new(0, 0, 0, 2), Position = UDim2.new(0, 0, 0, 2),
@@ -413,14 +421,19 @@ function Library:CreateWindow(title, opts)
     })
     bindAccentColor(TabIndicator, "BackgroundColor3")
 
+    -- tabs live in their own child container, so UIListLayout only lays out
+    -- the buttons and never interferes with the indicator above it
+    local TabContainer = new("Frame", {
+        Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Parent = TabRow,
+    })
     -- tabs on the LEFT, inset so they line up with the window outlines
     new("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
         Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Parent = TabRow,
+        Parent = TabContainer,
     })
-    pad(TabRow, 4, 2)
+    pad(TabContainer, 4, 2)
 
     -- move the indicator over a given tab button; instant = snap, else slide
     local function moveIndicator(toBtn, instant)
@@ -458,6 +471,7 @@ function Library:CreateWindow(title, opts)
         Position = UDim2.new(0.5, WINDOW_W / 2 + 6, 0.5, -WINDOW_H / 2),
         BackgroundColor3 = Theme.Panel, Parent = ScreenGui,
     })
+    local popupClosing = false
     local ColorPopupHeader = panel({
         Size = UDim2.new(1, 0, 0, 16), BackgroundColor3 = Theme.Header, ZIndex = 51, Parent = ColorPopup,
     })
@@ -478,7 +492,20 @@ function Library:CreateWindow(title, opts)
     ColorPopupClose.MouseLeave:Connect(function()
         tweenTo(ColorPopupClose, { TextColor3 = Theme.SubText }, 0.1)
     end)
-    ColorPopupClose.MouseButton1Click:Connect(function() ColorPopup.Visible = false end)
+
+    -- fade the popup out instead of hard-hiding it (item 19)
+    local function closeColorPopup()
+        popupClosing = true
+        tweenTo(ColorPopup, { GroupTransparency = 1 }, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        task.delay(0.12, function()
+            if popupClosing then
+                ColorPopup.Visible = false
+                ColorPopup.GroupTransparency = 0
+                popupClosing = false
+            end
+        end)
+    end
+    ColorPopupClose.MouseButton1Click:Connect(closeColorPopup)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
 
@@ -597,7 +624,11 @@ function Library:CreateWindow(title, opts)
         if nearPos then
             ColorPopup.Position = UDim2.new(0, nearPos.X + 16, 0, math.max(0, nearPos.Y - 60))
         end
+        -- fade in (item 19); also cancels a pending close so it can't hide us
+        popupClosing = false
+        ColorPopup.GroupTransparency = 1
         ColorPopup.Visible = true
+        tweenTo(ColorPopup, { GroupTransparency = 0 }, 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
     end
 
 
@@ -638,7 +669,7 @@ function Library:CreateWindow(title, opts)
         local TabBtn = new("TextButton", {
             Text = name, Font = FONT, TextSize = 13, TextColor3 = Theme.SubText,
             BackgroundColor3 = Theme.Header, BorderSizePixel = 1, BorderColor3 = Theme.Border,
-            Size = UDim2.new(0, measured.X + 18, 1, 0), Parent = TabRow,
+            Size = UDim2.new(0, measured.X + 18, 1, 0), Parent = TabContainer,
         })
 
         -- hover fade on inactive tabs (active one is guarded out)
@@ -748,10 +779,13 @@ function Library:CreateWindow(title, opts)
                     Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0, 0, 0.5, -6),
                     BackgroundColor3 = Theme.Track, Parent = Row,
                 })
-                -- FILLED square when toggled on (item 13); the fill sweeps
-                -- in/out (item 19) instead of popping
+                -- FILLED square when toggled on (item 13); the fill grows from
+                -- the CENTER outward (item 19) — anchored center so scaling
+                -- the size expands evenly around the middle
                 local Fill = new("Frame", {
-                    Size = UDim2.new(state and 1 or 0, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0),
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    Position = UDim2.new(0.5, 0, 0.5, 0),
+                    Size = UDim2.new(state and 1 or 0, 0, state and 1 or 0, 0),
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
                     Parent = Sq,
                 })
@@ -763,7 +797,9 @@ function Library:CreateWindow(title, opts)
                 })
                 local function set(v, fire)
                     state = v
-                    tweenTo(Fill, { Size = UDim2.new(state and 1 or 0, 0, 1, 0) }, 0.12)
+                    tweenTo(Fill, {
+                        Size = UDim2.new(state and 1 or 0, 0, state and 1 or 0, 0),
+                    }, 0.14)
                     if fire ~= false and callback then callback(state) end
                 end
                 Row.MouseButton1Click:Connect(function() set(not state) end)
@@ -1121,11 +1157,28 @@ function Library:CreateWindow(title, opts)
                 Content.Visible = not collapsed
                 CollapseBtn.Text = collapsed and "+" or "-"
             end
+            applyCollapsed()
+
+            -- fade the content out/in (item 19) instead of hard-hiding it.
+            -- Hidden = invisible also makes AutomaticSize drop it, so the
+            -- box shrinks back to just the header like before.
             CollapseBtn.MouseButton1Click:Connect(function()
                 collapsed = not collapsed
-                applyCollapsed()
+                if collapsed then
+                    tweenTo(Content, { GroupTransparency = 1 }, 0.12)
+                    task.delay(0.12, function()
+                        if collapsed then
+                            Content.Visible = false
+                            Content.GroupTransparency = 0
+                        end
+                    end)
+                else
+                    Content.GroupTransparency = 1
+                    Content.Visible = true
+                    tweenTo(Content, { GroupTransparency = 0 }, 0.14)
+                end
+                CollapseBtn.Text = collapsed and "+" or "-"
             end)
-            applyCollapsed()
 
 
             local BoxObj = attachElements(Content)

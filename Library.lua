@@ -28,8 +28,12 @@
     10. Dropdowns (AddCombo) restyled to match the rest of the menu:
         bordered box, hover/open states, accent border while open,
         accent selection bar + highlighted row on the selected option.
-    11. SV cursor in the color popup is now a filled dot (white + black
-        ring) so it reads clearly against both light and dark.
+    11. SV cursor in the color popup is a small circle with a soft white
+        glow halo.
+    12. Columns are scrolling frames — when the window is resized too
+        small, content is clipped instead of sticking out below the
+        menu, and you can scroll down to reach the rest.
+    13. Checkbox fills completely with the accent color when toggled on.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -399,16 +403,25 @@ function Library:CreateWindow(title, opts)
         ZIndex = 52, Parent = SVSquare,
     })
     new("UIGradient", { Transparency = NumberSequence.new(1, 0), Rotation = 90, Parent = BlackOverlay })
-    -- cursor (item 11): a FILLED dot — white center + black ring, so it
-    -- stays clearly visible against BOTH the white corner and dark corners
-    local SVCursor = new("Frame", {
-        Size = UDim2.new(0, 12, 0, 12),
+    -- cursor (item 11): a SMALL CIRCLE with a soft white glow halo around it
+    local SVCursorGlow = new("Frame", {
+        Size = UDim2.new(0, 18, 0, 18),
         BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.55,
+        BorderSizePixel = 0,
+        ZIndex = 52, Parent = SVSquare,
+    })
+    new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SVCursorGlow })
+    local SVCursor = new("Frame", {
+        Size = UDim2.new(0, 8, 0, 8),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 0,
         ZIndex = 53, Parent = SVSquare,
     })
+    new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SVCursor })
     local function setSVCursor(relX, relY)
-        SVCursor.Position = UDim2.new(relX, -6, relY, -6)
+        SVCursorGlow.Position = UDim2.new(relX, -9, relY, -9)
+        SVCursor.Position = UDim2.new(relX, -4, relY, -4)
     end
 
 
@@ -522,10 +535,9 @@ function Library:CreateWindow(title, opts)
 
 
     function Window:CreateTab(name)
-        -- item 2 (this list): tabs now measure their actual text with
-        -- TextService instead of guessing "#name * 8" — that guess was off
-        -- for anything that wasn't short/plain text, which is why tabs
-        -- looked randomly too tight or too wide before.
+        -- tabs measure their actual text with TextService instead of
+        -- guessing "#name * 8" — that guess was off for anything that
+        -- wasn't short/plain text.
         local measured = TextService:GetTextSize(name, 13, FONT, Vector2.new(1000, 20))
         local TabBtn = new("TextButton", {
             Text = name, Font = FONT, TextSize = 13, TextColor3 = Theme.SubText,
@@ -543,10 +555,21 @@ function Library:CreateWindow(title, opts)
         })
         local Columns = {}
         for i = 1, 2 do
-            -- item 1: columns are now bordered panels themselves, not just
-            -- transparent holders, so the layout reads as boxed sections
-            local Col = panel({
-                Size = UDim2.new(0.5, -2, 1, 0), BackgroundColor3 = Theme.Background, LayoutOrder = i, Parent = Page,
+            -- columns are now scrolling frames (item 12): content gets
+            -- CLIPPED when the window is resized too small instead of
+            -- sticking out, and you can scroll down to reach the rest
+            local Col = new("ScrollingFrame", {
+                Size = UDim2.new(0.5, -2, 1, 0),
+                BackgroundColor3 = Theme.Background,
+                BorderSizePixel = 1, BorderColor3 = Theme.Border,
+                LayoutOrder = i, Parent = Page,
+                ClipsDescendants = true,
+                ScrollBarThickness = 3,
+                ScrollBarImageColor3 = Theme.SubText,
+                ScrollBarImageTransparency = 0.5,
+                ScrollingDirection = Enum.ScrollingDirection.Y,
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                CanvasSize = UDim2.new(0, 0, 0, 0),
             })
             local ColInner = new("Frame", {
                 Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y,
@@ -616,7 +639,7 @@ function Library:CreateWindow(title, opts)
                     Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0, 0, 0.5, -6),
                     BackgroundColor3 = Theme.Track, Parent = Row,
                 })
-                -- FILLED square when toggled on (instead of a half-empty box)
+                -- FILLED square when toggled on (item 13) instead of a half-empty box
                 local Fill = new("Frame", {
                     Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0),
                     BackgroundColor3 = Theme.Accent, BorderSizePixel = 0,
@@ -694,9 +717,8 @@ function Library:CreateWindow(title, opts)
             end
 
 
-            -- dropdown (item 10): restyled to match the rest of the menu —
-            -- bordered track box, header-bg on hover, accent border/text while
-            -- open, and an accent bar + highlighted row on the selected option
+            -- dropdown (item 10): bordered track box, header-bg on hover,
+            -- accent border/chevron while open, accent bar on the selected row
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
@@ -827,8 +849,8 @@ function Library:CreateWindow(title, opts)
             end
 
 
-            -- item 2 fix: THIS is the one that actually rebinds the menu's
-            -- real show/hide key, via Window:SetToggleKeybind.
+            -- THIS is the one that actually rebinds the menu's real show/hide
+            -- key, via Window:SetToggleKeybind.
             function E:AddMenuKeybind(text, risky)
                 local key = State.ToggleKey
                 local listening = false
@@ -863,7 +885,7 @@ function Library:CreateWindow(title, opts)
             end
 
 
-            -- item 3: opens the shared floating popup instead of an inline dropdown
+            -- opens the shared floating popup instead of an inline dropdown
             function E:AddColorPicker(text, default, callback, risky)
                 local color = default or Color3.fromRGB(255, 255, 255)
                 local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, Parent = Content })

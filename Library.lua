@@ -16,7 +16,8 @@
        so re-running the script (or anything re-calling CreateWindow) can't
        stack multiple menus. Combined with the earlier drag-connection fix.
     5. Tabs now have a real 1px border box around them instead of just
-       looking like floating text.
+       looking like floating text, and sit on the LEFT, inset so they line
+       up with the window outlines.
     6. Every element (checkbox/slider/combo/keybind/button/label/color
        picker) takes an optional trailing `risky` boolean — pass true and
        its label renders in red. Toggle it per-element, nothing global.
@@ -25,20 +26,17 @@
        if you call Window:SetAccentColor().
     9. Window is now resizable via a grip in the bottom-right corner
        (min size 300x220), on top of the title-bar drag.
-    10. Dropdowns (AddCombo) restyled; the selected row is highlighted with
-        an accent bar + brighter text, and that highlight reliably follows
-        your clicks (rewritten with per-row state objects so nothing gets
-        stuck on one option).
-    11. SV cursor in the color popup is a small circle with a soft white
-        glow halo.
+    10. Dropdowns (AddCombo) restyled; the selected row is highlighted
+        with an accent bar + brighter text, and that highlight reliably
+        follows your clicks (per-row state objects so nothing gets stuck).
+    11. SV cursor in the color popup is a small circle with a UIStroke
+        glow (UIShadow doesn't render in-game, UIStroke does).
     12. Columns are scrolling frames — content clips instead of sticking
         out when the window is resized too small, and you can scroll down.
     13. Checkbox fills completely with the accent color when toggled on.
-    14. Top tabs are right-aligned.
     15. CreateWindow accepts `GameName` — shown in RISKY red, top-right of
-        the header, just left of the X button.
-    16. Tabs sit inset from the right edge so they line up with the
-        window outlines.
+        the header.
+    17. No X button in the header (pointless since the menu key toggles it).
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -281,23 +279,16 @@ function Library:CreateWindow(title, opts)
         BackgroundTransparency = 1, Position = UDim2.new(0, 6, 0, 0), Size = UDim2.new(0, 200, 1, 0),
         TextXAlignment = Enum.TextXAlignment.Left, Parent = TitleBar,
     })
-    local CloseBtn = new("TextButton", {
-        Text = "X", Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.SubText,
-        BackgroundTransparency = 1, Size = UDim2.new(0, 22, 1, 0), Position = UDim2.new(1, -22, 0, 0),
-        Parent = TitleBar,
-    })
-    hoverFlash(CloseBtn, Color3.fromRGB(210, 80, 80), Theme.SubText)
-    CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
 
 
-    -- game name (item 15): risky RED text, top-right of the header, left
-    -- of the X button — pass opts.GameName to CreateWindow
+    -- game name (item 15): risky RED text, top-right of the header —
+    -- pass opts.GameName to CreateWindow
     if opts.GameName and opts.GameName ~= "" then
         local gnSize = TextService:GetTextSize(opts.GameName, 12, FONT_BOLD, Vector2.new(1000, 20))
         local gnW = math.min(gnSize.X + 6, 200)
         new("TextLabel", {
             Text = opts.GameName, Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.Risky,
-            BackgroundTransparency = 1, Position = UDim2.new(1, -24 - gnW, 0, 0), Size = UDim2.new(0, gnW + 2, 1, 0),
+            BackgroundTransparency = 1, Position = UDim2.new(1, -4 - gnW, 0, 0), Size = UDim2.new(0, gnW + 2, 1, 0),
             TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd,
             Parent = TitleBar,
         })
@@ -369,14 +360,14 @@ function Library:CreateWindow(title, opts)
         Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 20),
         BackgroundColor3 = Theme.Header, Parent = Main,
     })
+    -- tabs on the LEFT, inset so they line up with the window outlines
     new("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
-        HorizontalAlignment = Enum.HorizontalAlignment.Right, -- item 14: tabs up against the right
-        Padding = UDim.new(0, 2),
+        Padding = UDim.new(0, 4),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = TabRow,
     })
-    pad(TabRow, 4, 2) -- item 16: inset from the border so the tabs line up with the outlines
+    pad(TabRow, 4, 2)
 
 
     local PageHolder = panel({
@@ -403,12 +394,6 @@ function Library:CreateWindow(title, opts)
         BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -20, 1, 0),
         TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 51, Parent = ColorPopupHeader,
     })
-    local ColorPopupClose = new("TextButton", {
-        Text = "x", Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.SubText,
-        BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
-        ZIndex = 51, Parent = ColorPopupHeader,
-    })
-    ColorPopupClose.MouseButton1Click:Connect(function() ColorPopup.Visible = false end)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
 
@@ -428,25 +413,23 @@ function Library:CreateWindow(title, opts)
         ZIndex = 52, Parent = SVSquare,
     })
     new("UIGradient", { Transparency = NumberSequence.new(1, 0), Rotation = 90, Parent = BlackOverlay })
-    -- cursor (item 11): a SMALL CIRCLE with a soft white glow halo around it
-    local SVCursorGlow = new("Frame", {
-        Size = UDim2.new(0, 18, 0, 18),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BackgroundTransparency = 0.55,
-        BorderSizePixel = 0,
-        ZIndex = 52, Parent = SVSquare,
-    })
-    new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SVCursorGlow })
+    -- cursor (item 11): small circle with a UIStroke glow
+    -- (UIShadow only renders in Studio, so UIStroke is what shows in-game)
     local SVCursor = new("Frame", {
-        Size = UDim2.new(0, 8, 0, 8),
+        Size = UDim2.new(0, 6, 0, 6),
         BackgroundColor3 = Color3.new(1, 1, 1),
         BorderSizePixel = 0,
         ZIndex = 53, Parent = SVSquare,
     })
     new("UICorner", { CornerRadius = UDim.new(1, 0), Parent = SVCursor })
+    new("UIStroke", {
+        Color = Color3.new(1, 1, 1),
+        Transparency = 0.2,
+        Thickness = 3,
+        Parent = SVCursor,
+    })
     local function setSVCursor(relX, relY)
-        SVCursorGlow.Position = UDim2.new(relX, -9, relY, -9)
-        SVCursor.Position = UDim2.new(relX, -4, relY, -4)
+        SVCursor.Position = UDim2.new(relX, -3, relY, -3)
     end
 
 
@@ -743,8 +726,8 @@ function Library:CreateWindow(title, opts)
 
 
             -- dropdown (item 10): bordered track box, accent outline while
-            -- open. The selected row uses per-row state objects (item 10
-            -- fix) so the highlight is GUARANTEED to follow your clicks.
+            -- open. The selected row uses per-row state objects so the
+            -- highlight is GUARANTEED to follow your clicks.
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]

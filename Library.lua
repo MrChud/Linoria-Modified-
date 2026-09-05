@@ -154,7 +154,7 @@ function Library:CreateWindow(title, opts)
         Parent = PlayerGui,
     })
  
-    local WINDOW_W, WINDOW_H = 500, 700
+    local WINDOW_W, WINDOW_H = 550, 650
  
     local Main = panel({
         Name = "Main",

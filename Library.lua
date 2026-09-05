@@ -10,7 +10,8 @@
        unless you use AddMenuKeybind.)
     3. Color pickers are now a separate floating popup window (hue strip +
        saturation/value square), not an inline dropdown — click a swatch,
-       a small window pops out, drag it around independently.
+       a small window pops out, drag it around independently. It has its
+       own X button to close it.
     4. Duplication fix: the ScreenGui now has a fixed name and destroys any
        previous instance of itself in PlayerGui before creating a new one,
        so re-running the script (or anything re-calling CreateWindow) can't
@@ -36,7 +37,10 @@
     13. Checkbox fills completely with the accent color when toggled on.
     15. CreateWindow accepts `GameName` — shown in RISKY red, top-right of
         the header.
-    17. No X button in the header (pointless since the menu key toggles it).
+    17. No X button in the window header (pointless since the menu key
+        toggles it). The color picker popup DOES keep its X.
+    18. A tiny accent-colored line sits under every groupbox title and on
+        top of the tab row, both updating live with the accent color.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -360,6 +364,12 @@ function Library:CreateWindow(title, opts)
         Size = UDim2.new(1, 0, 0, 24), Position = UDim2.new(0, 0, 0, 20),
         BackgroundColor3 = Theme.Header, Parent = Main,
     })
+    -- tiny accent line (item 18) on the TOP of the tabs
+    local TabTopLine = new("Frame", {
+        Size = UDim2.new(1, 0, 0, 2), Position = UDim2.new(0, 0, 0, 0),
+        BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, ZIndex = 2, Parent = TabRow,
+    })
+    onAccent(function(c) TabTopLine.BackgroundColor3 = c end)
     -- tabs on the LEFT, inset so they line up with the window outlines
     new("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
@@ -394,6 +404,14 @@ function Library:CreateWindow(title, opts)
         BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -20, 1, 0),
         TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 51, Parent = ColorPopupHeader,
     })
+    -- X button: close the color popup
+    local ColorPopupClose = new("TextButton", {
+        Text = "x", Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.SubText,
+        BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
+        ZIndex = 51, Parent = ColorPopupHeader,
+    })
+    hoverFlash(ColorPopupClose, Color3.fromRGB(210, 80, 80), Theme.SubText)
+    ColorPopupClose.MouseButton1Click:Connect(function() ColorPopup.Visible = false end)
     makeDraggable(ColorPopupHeader, ColorPopup)
 
 
@@ -977,6 +995,12 @@ function Library:CreateWindow(title, opts)
                 BackgroundTransparency = 1, Position = UDim2.new(0, 4, 0, 0), Size = UDim2.new(1, -20, 1, 0),
                 TextXAlignment = Enum.TextXAlignment.Left, Parent = Header,
             })
+            -- tiny accent line (item 18) under the groupbox title
+            local HeaderLine = new("Frame", {
+                Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1),
+                BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Parent = Header,
+            })
+            onAccent(function(c) HeaderLine.BackgroundColor3 = c end)
             local CollapseBtn = new("TextButton", {
                 Text = "-", Font = FONT_BOLD, TextSize = 13, TextColor3 = Theme.SubText,
                 BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),

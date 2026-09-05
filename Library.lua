@@ -25,21 +25,26 @@
        if you call Window:SetAccentColor().
     9. Window is now resizable via a grip in the bottom-right corner
        (min size 300x220), on top of the title-bar drag.
-    10. Dropdowns (AddCombo) restyled to match the rest of the menu;
-        they get an accent outline while open, and the blue accent bar
-        on the list follows your selection (fixed the loop-var bug that
-        made every click stick to one option).
+    10. Dropdowns (AddCombo) restyled; the selected row is highlighted with
+        an accent bar + brighter text, and that highlight reliably follows
+        your clicks (rewritten with per-row state objects so nothing gets
+        stuck on one option).
     11. SV cursor in the color popup is a small circle with a soft white
         glow halo.
-    12. Columns are scrolling frames — when the window is resized too
-        small, content is clipped instead of sticking out below the
-        menu, and you can scroll down to reach the rest.
+    12. Columns are scrolling frames — content clips instead of sticking
+        out when the window is resized too small, and you can scroll down.
     13. Checkbox fills completely with the accent color when toggled on.
     14. Top tabs are right-aligned.
+    15. CreateWindow accepts `GameName` — shown in RISKY red, top-right of
+        the header, just left of the X button.
+    16. Tabs sit inset from the right edge so they line up with the
+        window outlines.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
-        local Window = Library:CreateWindow("menu")
+        local Window = Library:CreateWindow("menu", {
+            GameName = "DEFUSAL",
+        })
         local Tab = Window:CreateTab("Main")
         local Box = Tab:CreateBox("General")
         Box:AddCheckbox("Enabled", false, function(v) print(v) end)
@@ -283,6 +288,21 @@ function Library:CreateWindow(title, opts)
     })
     hoverFlash(CloseBtn, Color3.fromRGB(210, 80, 80), Theme.SubText)
     CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+
+
+    -- game name (item 15): risky RED text, top-right of the header, left
+    -- of the X button — pass opts.GameName to CreateWindow
+    if opts.GameName and opts.GameName ~= "" then
+        local gnSize = TextService:GetTextSize(opts.GameName, 12, FONT_BOLD, Vector2.new(1000, 20))
+        local gnW = math.min(gnSize.X + 6, 200)
+        new("TextLabel", {
+            Text = opts.GameName, Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.Risky,
+            BackgroundTransparency = 1, Position = UDim2.new(1, -24 - gnW, 0, 0), Size = UDim2.new(0, gnW + 2, 1, 0),
+            TextXAlignment = Enum.TextXAlignment.Right, TextTruncate = Enum.TextTruncate.AtEnd,
+            Parent = TitleBar,
+        })
+    end
+
     makeDraggable(TitleBar, Main)
 
 
@@ -351,12 +371,12 @@ function Library:CreateWindow(title, opts)
     })
     new("UIListLayout", {
         FillDirection = Enum.FillDirection.Horizontal,
-        HorizontalAlignment = Enum.HorizontalAlignment.Right, -- item 14: tabs move to the right
+        HorizontalAlignment = Enum.HorizontalAlignment.Right, -- item 14: tabs up against the right
         Padding = UDim.new(0, 2),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = TabRow,
     })
-    pad(TabRow, 2, 2)
+    pad(TabRow, 4, 2) -- item 16: inset from the border so the tabs line up with the outlines
 
 
     local PageHolder = panel({
@@ -723,14 +743,14 @@ function Library:CreateWindow(title, opts)
 
 
             -- dropdown (item 10): bordered track box, accent outline while
-            -- open, and the blue accent bar + highlight follows your
-            -- selection (fixed: option loop-var bug + immediate refresh)
+            -- open. The selected row uses per-row state objects (item 10
+            -- fix) so the highlight is GUARANTEED to follow your clicks.
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
                 local open = false
                 local Holder = new("Frame", {
-                    Size = UDim2.new(1, 0, 0, 32), ClipsDescendants = true,
+                    Size = UDim2.new(1, 0, 0, 34), ClipsDescendants = true,
                     BackgroundTransparency = 1, Parent = Content,
                 })
                 new("TextLabel", {
@@ -740,16 +760,17 @@ function Library:CreateWindow(title, opts)
                 })
 
                 local Btn = panel({
-                    Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 16),
+                    Position = UDim2.new(0, 0, 0, 15), Size = UDim2.new(1, 0, 0, 17),
                     BackgroundColor3 = Theme.Track, BorderColor3 = Theme.Border, Parent = Holder,
                 })
                 local BtnLbl = new("TextLabel", {
                     Text = tostring(selected), Font = FONT, TextSize = 12, TextColor3 = Theme.Text,
                     BackgroundTransparency = 1, Position = UDim2.new(0, 5, 0, 0), Size = UDim2.new(1, -22, 1, 0),
-                    TextXAlignment = Enum.TextXAlignment.Left, Parent = Btn,
+                    TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+                    Parent = Btn,
                 })
                 local Chevron = new("TextLabel", {
-                    Text = "▼", Font = FONT, TextSize = 11, TextColor3 = Theme.SubText,
+                    Text = "▼", Font = FONT_BOLD, TextSize = 11, TextColor3 = Theme.SubText,
                     BackgroundTransparency = 1, Position = UDim2.new(1, -16, 0, 0), Size = UDim2.new(0, 16, 1, 0),
                     Parent = Btn,
                 })
@@ -763,51 +784,66 @@ function Library:CreateWindow(title, opts)
 
                 local List = new("Frame", {
                     Position = UDim2.new(0, 0, 0, 33), Size = UDim2.new(1, 0, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y,
                     BackgroundTransparency = 1, Parent = Holder,
                 })
                 new("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = List })
 
                 local optionsUi = {}
                 for _, opt in ipairs(options) do
-                    local option = opt -- fresh local per iteration (fixes shared loop-var bug)
+                    -- one fresh table PER option: each row owns its own state,
+                    -- so closures can never share/overwrite each other
+                    local row = {
+                        opt = opt,
+                    }
                     local OptBtn = panel({
                         Size = UDim2.new(1, 0, 0, 15), BackgroundColor3 = Theme.Panel,
                         BorderColor3 = Theme.Border, Parent = List,
                     })
+                    row.btn = OptBtn
                     local Bar = new("Frame", {
                         Size = UDim2.new(0, 3, 1, -4), Position = UDim2.new(0, 3, 0, 2),
                         BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, Parent = OptBtn,
                     })
                     onAccent(function(c) Bar.BackgroundColor3 = c end)
+                    row.bar = Bar
                     local OptLbl = new("TextLabel", {
-                        Text = tostring(option), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
+                        Text = tostring(opt), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
                         BackgroundTransparency = 1, Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(1, -12, 1, 0),
                         TextXAlignment = Enum.TextXAlignment.Left, Parent = OptBtn,
                     })
+                    row.lbl = OptLbl
                     local OptClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = OptBtn })
+
+                    function row:SetSelected(v)
+                        self.bar.Visible = v
+                        self.lbl.TextColor3 = v and Theme.Text or Theme.SubText
+                        self.btn.BackgroundColor3 = v and Theme.Header or Theme.Panel
+                    end
+                    OptClick.MouseEnter:Connect(function()
+                        if row.opt ~= selected then OptBtn.BackgroundColor3 = Theme.Header end
+                    end)
+                    OptClick.MouseLeave:Connect(function()
+                        if row.opt ~= selected then OptBtn.BackgroundColor3 = Theme.Panel end
+                    end)
                     OptClick.MouseButton1Click:Connect(function()
-                        selected = option
+                        selected = row.opt
                         BtnLbl.Text = tostring(selected)
-                        refreshSelected()
+                        for _, e in ipairs(optionsUi) do e:SetSelected(e.opt == selected) end
                         if callback then callback(selected) end
                         setOpen(false)
                     end)
-                    table.insert(optionsUi, { opt = option, btn = OptBtn, bar = Bar, lbl = OptLbl })
+                    table.insert(optionsUi, row)
                 end
 
                 local function refreshSelected()
-                    for _, entry in ipairs(optionsUi) do
-                        local isSel = (entry.opt == selected)
-                        entry.bar.Visible = isSel
-                        entry.lbl.TextColor3 = isSel and Theme.Text or Theme.SubText
-                        entry.btn.BackgroundColor3 = isSel and Theme.Header or Theme.Panel
-                    end
+                    for _, e in ipairs(optionsUi) do e:SetSelected(e.opt == selected) end
                 end
 
                 local function setOpen(v)
                     open = v
-                    local listH = #options * 15 + math.max(0, #options - 1) * 1
-                    Holder.Size = open and UDim2.new(1, 0, 0, 33 + listH) or UDim2.new(1, 0, 0, 32)
+                    local listH = (#options * 15) + math.max(0, #options - 1)
+                    Holder.Size = open and UDim2.new(1, 0, 0, 33 + listH) or UDim2.new(1, 0, 0, 34)
                     Chevron.Text = open and "▲" or "▼"
                     Chevron.TextColor3 = open and Theme.Accent or Theme.SubText
                     Btn.BackgroundColor3 = open and Theme.Header or Theme.Track
@@ -816,6 +852,7 @@ function Library:CreateWindow(title, opts)
                 end
                 BtnClick.MouseButton1Click:Connect(function() setOpen(not open) end)
 
+                refreshSelected() -- mark the default selection immediately
                 return { Get = function() return selected end }
             end
 
@@ -1068,6 +1105,7 @@ return Library
     local Window = Library:CreateWindow("fracture", {
         AccentColor    = Color3.fromRGB(255, 140, 0),
         ToggleKeybind  = Enum.KeyCode.RightControl,
+        GameName       = "DEFUSAL",      -- red text, top-right of the header
     })
 
 

@@ -1113,41 +1113,120 @@ function Library:CreateWindow(title, opts)
 
             -- plain bindable key for YOUR OWN features. Does not affect the
             -- menu's own show/hide key -- use AddMenuKeybind for that.
+            -- Supports modes (Hold / Toggle / Always): LEFT-click to rebind,
+            -- RIGHT-click (or click the mode chip) to cycle the mode.
+            -- Callback fires with a boolean (active state) whenever it
+            -- changes. Handle extra method: GetMode()/SetMode(m).
             function E:AddKeybind(text, default, callback, risky)
                 local key = default or Enum.KeyCode.Unknown
+                local mode = "Toggle" -- Hold / Toggle / Always
+                local active = false
                 local listening = false
-                local Row = new("Frame", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, Parent = Content })
+                local MODES = { "Hold", "Toggle", "Always" }
+
+                local Row = new("Frame", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Parent = Content })
                 new("TextLabel", {
                     Text = text, Font = FONT, TextSize = 13, TextColor3 = labelColor(risky),
-                    BackgroundTransparency = 1, Size = UDim2.new(1, -50, 1, 0),
-                    TextXAlignment = Enum.TextXAlignment.Left, Parent = Row,
+                    BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, -106, 1, 0),
+                    TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = Row,
                 })
+
+                -- mode chip (sits between the label and the key button)
+                local ModeBtn = panel({
+                    BackgroundColor3 = Theme.Track,
+                    Position = UDim2.new(1, -98, 0, 0), Size = UDim2.new(0, 50, 0, 18), Parent = Row,
+                })
+                local ModeLbl = new("TextLabel", {
+                    Text = mode, Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.Text,
+                    BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = ModeBtn,
+                })
+                local ModeClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = ModeBtn })
+
                 local KeyBtn = panel({
                     BackgroundColor3 = Theme.Track,
-                    Position = UDim2.new(1, -46, 0, 0), Size = UDim2.new(0, 46, 0, 15), Parent = Row,
+                    Position = UDim2.new(1, -46, 0, 0), Size = UDim2.new(0, 46, 0, 18), Parent = Row,
                 })
                 local KeyLbl = new("TextLabel", {
                     Text = "[" .. key.Name .. "]", Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
                     BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = KeyBtn,
                 })
                 local KeyClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = KeyBtn })
+
+                local setActive
+                setActive = function(v)
+                    if v == active then return end
+                    active = v
+                    if callback then callback(active) end
+                end
+
+                local function setMode(m)
+                    mode = m
+                    ModeLbl.Text = mode
+                    -- Always = instantly on, others reset to off
+                    if mode == "Always" then
+                        setActive(true)
+                    else
+                        setActive(false)
+                    end
+                end
+
+                local function cycleMode()
+                    local i = 1
+                    for n, m in ipairs(MODES) do if m == mode then i = n end end
+                    setMode(MODES[i % #MODES + 1])
+                end
+
+                -- LEFT-click the key = rebind; RIGHT-click anywhere on the
+                -- keybind = cycle the mode
                 KeyClick.MouseButton1Click:Connect(function()
                     listening = true
                     KeyLbl.Text = "[...]"
                 end)
+                local function wireRightClick(btn)
+                    btn.InputBegan:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                            cycleMode()
+                        end
+                    end)
+                end
+                wireRightClick(KeyClick)
+                wireRightClick(ModeClick)
+                ModeClick.MouseButton1Click:Connect(cycleMode)
+
                 local function set(newKey)
-                    key = newKey
+                    key = newKey or Enum.KeyCode.Unknown
                     KeyLbl.Text = "[" .. key.Name .. "]"
                 end
+
                 UserInputService.InputBegan:Connect(function(input, gpe)
-                    if listening and input.UserInputType == Enum.UserInputType.Keyboard then
+                    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+                    if listening then
                         set(input.KeyCode)
                         listening = false
-                    elseif not gpe and input.KeyCode == key and callback then
-                        callback(key)
+                        return
+                    end
+                    if gpe then return end
+                    if input.KeyCode == key then
+                        if mode == "Toggle" then
+                            setActive(not active)
+                        elseif mode == "Hold" then
+                            setActive(true)
+                        end
                     end
                 end)
-                return { Get = function() return key end, Set = set }
+                UserInputService.InputEnded:Connect(function(input, gpe)
+                    if gpe then return end
+                    if input.KeyCode == key and mode == "Hold" then
+                        setActive(false)
+                    end
+                end)
+
+                return {
+                    Get = function() return key end,
+                    Set = set,
+                    GetMode = function() return mode end,
+                    SetMode = setMode,
+                }
             end
 
 

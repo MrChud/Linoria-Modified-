@@ -76,6 +76,16 @@
     25. ALL handles use Set(v, noCall) semantics — pass noCall=true to
         restore a value WITHOUT firing its callback (used by config load).
         Checkbox included.
+    26. AddCombo SetOptions now handles an EMPTY list correctly — it clears
+        the selection and shows a blank button instead of "nil". Fixes the
+        "deleted the last config but the dropdown still shows it" case.
+    27. Window pop-in animation on load — starts at size 0 and grows to its
+        natural size.
+    28. The menu keybind now ANIMATES the window: it collapses to size 0 on
+        close and pops back up on open. Size/Position only — no
+        GroupTransparency.
+    29. Dragging the title bar cancels any running Size/Position tween on
+        the window, so grabbing it mid-animation can't fight the tween.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -175,6 +185,8 @@ end
 
 
 -- robust single-connection dragging (fixes the duplication-while-dragging bug)
+-- (item 29) grabbing mid-animation cancels the running tween so the tween
+-- doesn't fight the drag for Position
 local function makeDraggable(handle, target)
     local dragging = false
     local dragStart, startPos
@@ -193,6 +205,7 @@ local function makeDraggable(handle, target)
             return
         end
         stopDrag()
+        if activeTweens[target] then activeTweens[target]:Cancel() end
         dragging = true
         dragStart = input.Position
         startPos = target.Position
@@ -314,6 +327,9 @@ function Library:CreateWindow(title, opts)
 
     -- taller than wide, like the reference menus
     local WINDOW_W, WINDOW_H = 460, 620
+    -- current logical size (updated by the resize grip so the open/close
+    -- animation always returns to whatever size the user last dragged to)
+    local curW, curH = WINDOW_W, WINDOW_H
 
 
     local Main = panel({
@@ -321,6 +337,7 @@ function Library:CreateWindow(title, opts)
         Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H),
         Position = UDim2.new(0.5, -WINDOW_W / 2, 0.5, -WINDOW_H / 2),
         BackgroundColor3 = Theme.Background,
+        ClipsDescendants = true, -- keeps content inside the frame while it scales (animation)
         Parent = ScreenGui,
     })
 
@@ -415,6 +432,7 @@ function Library:CreateWindow(title, opts)
             local w = math.max(MIN_W, startSize.X + delta.X)
             local h = math.max(MIN_H, startSize.Y + delta.Y)
             Main.Size = UDim2.new(0, w, 0, h)
+            curW, curH = w, h -- remember size for the open/close animation
         end)
         resizeEnd = UserInputService.InputEnded:Connect(function(endInput)
             if endInput.UserInputType == Enum.UserInputType.MouseButton1 or endInput.UserInputType == Enum.UserInputType.Touch then
@@ -660,13 +678,36 @@ function Library:CreateWindow(title, opts)
 
 
     -- === menu visibility key (item 2 fix lives in State so it's mutable) ===
+    -- (item 28) toggling now animates: close shrinks the window to 0,
+    -- open pops it back up. Size/Position only -- universally tweenable.
     local State = { ToggleKey = opts.ToggleKeybind or Enum.KeyCode.RightControl }
     local visible = true
+    local function setWindowVisible(v)
+        if v == visible then return end
+        visible = v
+        if activeTweens[Main] then activeTweens[Main]:Cancel() end
+        if v then
+            Main.Visible = true
+            Main.Size = UDim2.new(0, 0, 0, 0)
+            Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+            tweenTo(Main, {
+                Size = UDim2.new(0, curW, 0, curH),
+                Position = UDim2.new(0.5, -curW / 2, 0.5, -curH / 2),
+            }, 0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        else
+            tweenTo(Main, {
+                Size = UDim2.new(0, 0, 0, 0),
+                Position = UDim2.new(0.5, 0, 0.5, 0),
+            }, 0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            task.delay(0.16, function()
+                if not visible then Main.Visible = false end
+            end)
+        end
+    end
     UserInputService.InputBegan:Connect(function(input, gpe)
         if gpe then return end
         if input.KeyCode == State.ToggleKey then
-            visible = not visible
-            Main.Visible = visible
+            setWindowVisible(not visible)
         end
     end)
 
@@ -905,6 +946,8 @@ function Library:CreateWindow(title, opts)
             -- while open, slides open with a rotating chevron. Selected row
             -- uses per-row state objects so highlights never get stuck.
             -- SetOptions rebuilds the list (added for config load).
+            -- (item 26) SetOptions with an EMPTY list clears the selection
+            -- instead of showing "nil".
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
@@ -963,13 +1006,20 @@ function Library:CreateWindow(title, opts)
                     optionsUi = {}
                     options = list or options
 
-                    -- keep the selection valid against the new option list
-                    local found = false
-                    for _, opt in ipairs(options) do
-                        if opt == selected then found = true break end
+                    -- (item 26) empty list: clear the selection, show a
+                    -- blank button instead of "nil"
+                    if #options == 0 then
+                        selected = nil
+                        BtnLbl.Text = ""
+                    else
+                        -- keep the selection valid against the new option list
+                        local found = false
+                        for _, opt in ipairs(options) do
+                            if opt == selected then found = true break end
+                        end
+                        if not found then selected = options[1] end
+                        BtnLbl.Text = tostring(selected)
                     end
-                    if not found then selected = options[1] end
-                    BtnLbl.Text = tostring(selected)
 
                     for _, opt in ipairs(options) do
                         -- one fresh table PER option: each row owns its own state,
@@ -1378,6 +1428,18 @@ function Library:CreateWindow(title, opts)
 
         return TabObj
     end
+
+
+    -- (item 27) load-in animation: window pops from size 0 up to its
+    -- natural size when the menu is created
+    task.defer(function()
+        Main.Size = UDim2.new(0, 0, 0, 0)
+        Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+        tweenTo(Main, {
+            Size = UDim2.new(0, curW, 0, curH),
+            Position = UDim2.new(0.5, -curW / 2, 0.5, -curH / 2),
+        }, 0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+    end)
 
 
     return Window

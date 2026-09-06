@@ -1,4 +1,4 @@
--- SaveManager.lua
+-- SaveManager.lua-
 local HttpService = game:GetService("HttpService")
 
 local SaveManager = {}
@@ -14,6 +14,7 @@ local State = {
     LastConfig = "",
     CurrentConfig = "",
     Elements = {},
+    Types = {},
     Ignore = {},
     IgnoreTheme = false,
     ConfigNameBox = nil,
@@ -53,6 +54,25 @@ local function trim(s)
     return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+--// serialization ------------------------------------------------------
+local function encode(value, kind)
+    if kind == "AddColorPicker" and typeof(value) == "Color3" then
+        return { __color = true, r = math.round(value.R * 255), g = math.round(value.G * 255), b = math.round(value.B * 255) }
+    elseif (kind == "AddKeybind" or kind == "AddMenuKeybind") and typeof(value) == "EnumItem" then
+        return { __keybind = true, name = value.Name }
+    end
+    return value
+end
+
+local function decode(value, kind)
+    if kind == "AddColorPicker" and type(value) == "table" and value.__color then
+        return Color3.fromRGB(value.r, value.g, value.b)
+    elseif (kind == "AddKeybind" or kind == "AddMenuKeybind") and type(value) == "table" and value.__keybind then
+        return Enum.KeyCode[value.name] or Enum.KeyCode.Unknown
+    end
+    return value
+end
+
 --// element capture -----------------------------------------------------
 local function wrapElementModule(module)
     local wrapped = {}
@@ -63,7 +83,9 @@ local function wrapElementModule(module)
             wrapped[name] = function(_, ...)
                 local handle = orig(module, ...)
                 if State.Capturing and handle and type(handle) == "table" and handle.Get then
-                    State.Elements[tostring(select(1, ...) or "Option")] = handle
+                    local key = tostring(select(1, ...) or "Option")
+                    State.Elements[key] = handle
+                    State.Types[key] = name
                 end
                 return handle
             end
@@ -87,8 +109,22 @@ local function wrapBox(boxObj)
     return wrapElementModule(boxObj)
 end
 
+local function ignored(key)
+    return State.Ignore[key] or (State.IgnoreTheme and THEME_KEYS[key])
+end
+
+local function snapshot()
+    local data = {}
+    for k, h in pairs(State.Elements) do
+        if not ignored(k) then
+            data[k] = encode(h.Get(), State.Types[k])
+        end
+    end
+    return data
+end
+
 --// public API ----------------------------------------------------------
--- call BEFORE Library:CreateWindow
+-- call BEFORE Library:CreateWindow (this is what makes capture work)
 function SaveManager:SetLibrary(Library)
     State.Library = Library
     State.Capturing = true
@@ -142,17 +178,6 @@ function SaveManager:SetLoadOnStart(bool)
 end
 
 --// file ops ------------------------------------------------------------
-local function snapshot()
-    local data = {}
-    for k, h in pairs(State.Elements) do
-        local ignored = State.Ignore[k] or (State.IgnoreTheme and THEME_KEYS[k])
-        if not ignored then
-            data[k] = h.Get()
-        end
-    end
-    return data
-end
-
 function SaveManager:ListConfigs()
     local out = {}
     local d = dir()
@@ -174,22 +199,27 @@ end
 
 function SaveManager:CreateConfig(name)
     name = trim(name)
-    if name == "" or isfile(fullPath(name)) then return false end
+    if name == "" then print("[SaveManager] no config name given"); return false end
+    if isfile(fullPath(name)) then print("[SaveManager] already exists:", name); return false end
     ensureDir(dir())
-    writefile(fullPath(name), HttpService:JSONEncode(snapshot()))
+    local ok, err = pcall(writefile, fullPath(name), HttpService:JSONEncode(snapshot()))
+    if not ok then warn("[SaveManager] write failed:", err); return false end
     State.CurrentConfig = name
     State.LastConfig = name
+    print("[SaveManager] created:", name)
     return true
 end
 
 function SaveManager:SaveConfig(name)
     name = trim(name)
     if name == "" and State.CurrentConfig ~= "" then name = State.CurrentConfig end
-    if name == "" then return false end
+    if name == "" then print("[SaveManager] no config name given"); return false end
     ensureDir(dir())
-    writefile(fullPath(name), HttpService:JSONEncode(snapshot()))
+    local ok, err = pcall(writefile, fullPath(name), HttpService:JSONEncode(snapshot()))
+    if not ok then warn("[SaveManager] write failed:", err); return false end
     State.CurrentConfig = name
     State.LastConfig = name
+    print("[SaveManager] saved:", name)
     return true
 end
 
@@ -197,21 +227,22 @@ function SaveManager:OverwriteConfig(name)
     return self:SaveConfig(name)
 end
 
-function SaveManager:LoadConfig(name, quiet)
+function SaveManager:LoadConfig(name)
     name = trim(name)
-    if name == "" or not isfile(fullPath(name)) then return false end
+    if name == "" then return false end
+    if not isfile(fullPath(name)) then print("[SaveManager] not found:", name); return false end
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(fullPath(name))) end)
-    if not ok or type(data) ~= "table" then return false end
+    if not ok or type(data) ~= "table" then warn("[SaveManager] corrupt config:", name); return false end
     for k, v in pairs(data) do
         local h = State.Elements[k]
         if h and h.Set then
-            pcall(h.Set, v, true)   -- quiet restore, no callbacks
+            pcall(h.Set, decode(v, State.Types[k]), true)
         end
     end
     State.CurrentConfig = name
     State.LastConfig = name
     if State.ConfigNameBox then State.ConfigNameBox:Set(name) end
-    if not quiet then self:SaveAutoload() end
+    print("[SaveManager] loaded:", name)
     return true
 end
 
@@ -220,6 +251,7 @@ function SaveManager:DeleteConfig(name)
     if name == "" or not isfile(fullPath(name)) then return false end
     delfile(fullPath(name))
     self:RefreshList()
+    print("[SaveManager] deleted:", name)
     return true
 end
 
@@ -239,7 +271,7 @@ function SaveManager:LoadAutoloadConfig()
         State.LastConfig = data.config or ""
     end
     if State.Autoload and State.LastConfig ~= "" then
-        self:LoadConfig(State.LastConfig, true)
+        self:LoadConfig(State.LastConfig)
     end
     return self
 end
@@ -254,9 +286,8 @@ function SaveManager:RefreshList()
 end
 
 --// UI ------------------------------------------------------------------
--- call at the very end, after all your tabs are built
 function SaveManager:BuildConfigSection(tab, opts)
-    State.Capturing = false     -- config UI must never save itself
+    State.Capturing = false
     opts = opts or {}
     local E = tab:CreateBox("Configs", opts.Column or 2)
 

@@ -17,7 +17,7 @@ local State = {
     Types = {},
     Ignore = {},
     IgnoreTheme = false,
-    Known = {},           -- configs we've created/saved this session
+    Known = {},
     ConfigNameBox = nil,
     ConfigList = nil,
 }
@@ -55,7 +55,7 @@ local function trim(s)
     return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
---// serialization ------------------------------------------------------
+--// serialization -------------------------------------------------------
 local function encode(value, kind)
     if kind == "AddColorPicker" and typeof(value) == "Color3" then
         return { __color = true, r = math.round(value.R * 255), g = math.round(value.G * 255), b = math.round(value.B * 255) }
@@ -74,7 +74,7 @@ local function decode(value, kind)
     return value
 end
 
---// element capture -----------------------------------------------------
+--// element capture ------------------------------------------------------
 local function wrapElementModule(module)
     local wrapped = {}
     for _, name in ipairs({ "AddCheckbox", "AddSlider", "AddCombo", "AddKeybind",
@@ -124,7 +124,7 @@ local function snapshot()
     return data
 end
 
---// public API ----------------------------------------------------------
+--// public API -----------------------------------------------------------
 -- call BEFORE Library:CreateWindow (this is what makes capture work)
 function SaveManager:SetLibrary(Library)
     State.Library = Library
@@ -140,8 +140,7 @@ function SaveManager:SetLibrary(Library)
             local TabObj = origTab(w, name)
             local origBox = TabObj.CreateBox
             TabObj.CreateBox = function(t, boxTitle, col, collapsed)
-                local BoxObj = origBox(t, boxTitle, col, collapsed)
-                return wrapBox(BoxObj)
+                return wrapBox(origBox(t, boxTitle, col, collapsed))
             end
             return TabObj
         end
@@ -150,15 +149,17 @@ function SaveManager:SetLibrary(Library)
     return self
 end
 
+-- path is relative to the executor workspace, e.g. SetFolder("Chud/gamename")
+-- -> workspace/Chud/gamename/
 function SaveManager:SetFolder(folder)
-    State.Folder = trim(folder):gsub("/+$", ""):gsub("\\+$", "")
+    State.Folder = tostring(folder or ""):gsub("/+$", ""):gsub("\\+$", "")
     ensureDir(State.Folder)
-    print("[SaveManager] folder:", State.Folder == "" and "(workspace root)" or State.Folder)
+    print("[SaveManager] folder -> workspace/" .. State.Folder)
     return self
 end
 
 function SaveManager:SetSubFolder(sub)
-    State.SubFolder = trim(sub):gsub("/+$", ""):gsub("\\+$", "")
+    State.SubFolder = tostring(sub or ""):gsub("/+$", ""):gsub("\\+$", "")
     ensureDir(dir())
     return self
 end
@@ -179,37 +180,35 @@ function SaveManager:SetLoadOnStart(bool)
     return self
 end
 
---// file ops ------------------------------------------------------------
-local function harvest(files, out, seen)
-    for _, f in ipairs(files or {}) do
-        local n = tostring(f):gsub("\\", "/"):match("([^/]+)%.json$")
-        if n and n ~= "Autoload" and not seen[n] then
-            seen[n] = true
-            table.insert(out, n)
-        end
-    end
-end
-
+--// config list ----------------------------------------------------------
+-- only lists JSONs inside OUR folder, never the whole workspace root
 function SaveManager:ListConfigs()
     local out, seen = {}, {}
     local d = dir()
 
-    if d ~= "" then
-        pcall(function() harvest(listfiles(d), out, seen) end)
-    end
-    -- fallback: also scan the workspace root just in case listing the
-    -- subfolder fails on your executor
-    pcall(function() harvest(listfiles(""), out, seen) end)
-
-    -- anything we created/saved this session always counts
-    for n in pairs(State.Known) do
-        if not seen[n] then
-            seen[n] = true
-            table.insert(out, n)
+    local function harvest(files)
+        for _, f in ipairs(files or {}) do
+            local n = tostring(f):gsub("\\", "/"):match("([^/]+)%.json$")
+            if n and n ~= "Autoload" and not seen[n] then
+                seen[n] = true
+                table.insert(out, n)
+            end
         end
     end
-    table.sort(out)
-    return out
+
+    if d ~= "" then
+        pcall(function() harvest(listfiles(d)) end)
+        pcall(function() harvest(listfiles(d .. "/")) end)
+    else
+        pcall(function() harvest(listfiles("")) end)
+    end
+
+    local final = {}
+    for _, n in ipairs(out) do
+        if isfile(fullPath(n)) or State.Known[n] then table.insert(final, n) end
+    end
+    table.sort(final)
+    return final
 end
 
 function SaveManager:CreateConfig(name)
@@ -240,18 +239,13 @@ function SaveManager:SaveConfig(name)
     return true
 end
 
-function SaveManager:OverwriteConfig(name)
-    return self:SaveConfig(name)
-end
-
 function SaveManager:LoadConfig(name)
     name = trim(name)
     if name == "" then return false end
-    if not isfile(fullPath(name)) and not State.Known[name] and not isfile(fullPath(name)) then
+    if not isfile(fullPath(name)) and not State.Known[name] then
         print("[SaveManager] not found:", name)
         return false
     end
-    local p = ensureDir(dir())
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(fullPath(name))) end)
     if not ok or type(data) ~= "table" then warn("[SaveManager] corrupt config:", name); return false end
     for k, v in pairs(data) do
@@ -280,10 +274,7 @@ end
 
 function SaveManager:SaveAutoload()
     ensureDir(dir())
-    writefile(autoloadPath(), HttpService:JSONEncode({
-        enabled = State.Autoload,
-        config = State.LastConfig,
-    }))
+    writefile(autoloadPath(), HttpService:JSONEncode({ enabled = State.Autoload, config = State.LastConfig }))
 end
 
 function SaveManager:LoadAutoloadConfig()
@@ -303,7 +294,7 @@ function SaveManager:RefreshList()
     if not State.ConfigList then return end
     local list = self:ListConfigs()
     if #list > 0 then
-        State.ConfigList.SetOptions(list)   -- dot call: handles are plain functions
+        State.ConfigList.SetOptions(list) -- dot call: handles are plain functions
     end
     return list
 end
@@ -344,9 +335,7 @@ function SaveManager:BuildConfigSection(tab, opts)
     end)
 
     E:AddButton("Delete Selected", function()
-        if State.CurrentConfig ~= "" then
-            self:DeleteConfig(State.CurrentConfig)
-        end
+        if State.CurrentConfig ~= "" then self:DeleteConfig(State.CurrentConfig) end
     end, true)
 
     self:RefreshList()

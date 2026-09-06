@@ -1,316 +1,302 @@
+-- SaveManager.lua
 local HttpService = game:GetService("HttpService")
 
 local SaveManager = {}
 SaveManager.__index = SaveManager
 
-SaveManager.Folder = "ModernUI"
+local State = {
+    Library = nil,
+    Window = nil,
+    Folder = "",
+    SubFolder = "",
+    Capturing = true,
+    Autoload = false,
+    LastConfig = "",
+    CurrentConfig = "",
+    Elements = {},
+    Ignore = {},
+    IgnoreTheme = false,
+    ConfigNameBox = nil,
+    ConfigList = nil,
+}
 
-local WindowRef    = nil
-local LoadOnStart  = false
-local LastConfig   = nil
-local Elements     = {}
-local BuildingUI   = false
+local THEME_KEYS = { "Theme", "Preset", "Accent Color", "Reset Accent", "Reset Default" }
 
-
-local function sanitize(name)
-    return tostring(name):gsub("[\\/:*?\"<>|]", "_")
-end
-
-
-local function ensureFolder()
-    if not (isfolder and makefolder and isfile and readfile and writefile and listfiles and delfile) then return false end
-    local path = ""
-    for part in SaveManager.Folder:gmatch("[^/]+") do
-        path = path == "" and part or (path .. "/" .. part)
-        if not isfolder(path) then makefolder(path) end
+--// paths ---------------------------------------------------------------
+local function dir()
+    if State.SubFolder ~= "" then
+        local base = State.Folder == "" and "settings" or (State.Folder .. "/settings")
+        return base .. "/" .. State.SubFolder
     end
-    return true
+    return State.Folder
 end
 
-
-local function globalPath()
-    return SaveManager.Folder .. "/_global.json"
+local function ensureDir(d)
+    if d == "" then return end
+    if isfolder(d) then return end
+    local parent = d:match("^(.*)/[^/]+$")
+    if parent then ensureDir(parent) end
+    if not isfolder(d) then pcall(createfolder, d) end
 end
 
-
-local function configPath(name)
-    return SaveManager.Folder .. "/" .. sanitize(name) .. ".json"
+local function fullPath(name)
+    local d = dir()
+    return d == "" and (name .. ".json") or (d .. "/" .. name .. ".json")
 end
 
+local function autoloadPath()
+    local d = dir()
+    return d == "" and "Autoload.json" or (d .. "/Autoload.json")
+end
 
-function SaveManager:SetFolder(name)
-    SaveManager.Folder = tostring(name)
+local function trim(s)
+    return (s or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+--// element capture -----------------------------------------------------
+local function wrapElementModule(module)
+    local wrapped = {}
+    for _, name in ipairs({ "AddCheckbox", "AddSlider", "AddCombo", "AddKeybind",
+                            "AddMenuKeybind", "AddColorPicker", "AddTextBox" }) do
+        local orig = module[name]
+        if orig then
+            wrapped[name] = function(_, ...)
+                local handle = orig(module, ...)
+                if State.Capturing and handle and type(handle) == "table" and handle.Get then
+                    State.Elements[tostring(select(1, ...) or "Option")] = handle
+                end
+                return handle
+            end
+        end
+    end
+    setmetatable(wrapped, { __index = module })
+    return wrapped
+end
+
+local function wrapBox(boxObj)
+    local origPills = boxObj.CreatePillTabs
+    if origPills then
+        boxObj.CreatePillTabs = function(self, names)
+            local result = origPills(self, names)
+            for k, mod in pairs(result) do
+                result[k] = wrapElementModule(mod)
+            end
+            return result
+        end
+    end
+    return wrapElementModule(boxObj)
+end
+
+--// public API ----------------------------------------------------------
+-- call BEFORE Library:CreateWindow
+function SaveManager:SetLibrary(Library)
+    State.Library = Library
+    State.Capturing = true
+
+    local origCreateWindow = Library.CreateWindow
+    Library.CreateWindow = function(lib, title, opts)
+        local Window = origCreateWindow(lib, title, opts)
+        State.Window = Window
+
+        local origTab = Window.CreateTab
+        Window.CreateTab = function(w, name)
+            local TabObj = origTab(w, name)
+            local origBox = TabObj.CreateBox
+            TabObj.CreateBox = function(t, boxTitle, col, collapsed)
+                local BoxObj = origBox(t, boxTitle, col, collapsed)
+                return wrapBox(BoxObj)
+            end
+            return TabObj
+        end
+        return Window
+    end
     return self
 end
 
-
-function SaveManager:LoadGlobal()
-    if not (isfile and isfile(globalPath())) then return end
-    local ok, data = pcall(HttpService.JSONDecode, HttpService, readfile(globalPath()))
-    if ok and type(data) == "table" then
-        LoadOnStart = data.LoadOnStart == true
-        LastConfig  = data.LastConfig
-    end
+function SaveManager:SetFolder(folder)
+    State.Folder = trim(folder):gsub("/+$", ""):gsub("\\+$", "")
+    ensureDir(dir())
+    return self
 end
 
+function SaveManager:SetSubFolder(sub)
+    State.SubFolder = trim(sub):gsub("/+$", ""):gsub("\\+$", "")
+    ensureDir(dir())
+    return self
+end
 
-function SaveManager:SaveGlobal()
-    ensureFolder()
-    pcall(writefile, globalPath(), HttpService:JSONEncode({
-        LoadOnStart = LoadOnStart == true,
-        LastConfig  = LastConfig or nil,
+function SaveManager:SetIgnoreIndexes(list)
+    for _, k in ipairs(list or {}) do State.Ignore[tostring(k)] = true end
+    return self
+end
+
+function SaveManager:IgnoreThemeSettings()
+    State.IgnoreTheme = true
+    return self
+end
+
+function SaveManager:SetLoadOnStart(bool)
+    State.Autoload = bool or false
+    self:SaveAutoload()
+    return self
+end
+
+--// file ops ------------------------------------------------------------
+local function snapshot()
+    local data = {}
+    for k, h in pairs(State.Elements) do
+        local ignored = State.Ignore[k] or (State.IgnoreTheme and THEME_KEYS[k])
+        if not ignored then
+            data[k] = h.Get()
+        end
+    end
+    return data
+end
+
+function SaveManager:ListConfigs()
+    local out = {}
+    local d = dir()
+    local ok, files
+    if d == "" then
+        ok, files = pcall(listfiles, "")
+    else
+        ok, files = pcall(listfiles, d)
+    end
+    if ok then
+        for _, f in ipairs(files) do
+            local n = tostring(f):gsub("\\", "/"):match("([^/]+)%.json$")
+            if n and n ~= "Autoload" then table.insert(out, n) end
+        end
+    end
+    table.sort(out)
+    return out
+end
+
+function SaveManager:CreateConfig(name)
+    name = trim(name)
+    if name == "" or isfile(fullPath(name)) then return false end
+    ensureDir(dir())
+    writefile(fullPath(name), HttpService:JSONEncode(snapshot()))
+    State.CurrentConfig = name
+    State.LastConfig = name
+    return true
+end
+
+function SaveManager:SaveConfig(name)
+    name = trim(name)
+    if name == "" and State.CurrentConfig ~= "" then name = State.CurrentConfig end
+    if name == "" then return false end
+    ensureDir(dir())
+    writefile(fullPath(name), HttpService:JSONEncode(snapshot()))
+    State.CurrentConfig = name
+    State.LastConfig = name
+    return true
+end
+
+function SaveManager:OverwriteConfig(name)
+    return self:SaveConfig(name)
+end
+
+function SaveManager:LoadConfig(name, quiet)
+    name = trim(name)
+    if name == "" or not isfile(fullPath(name)) then return false end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(fullPath(name))) end)
+    if not ok or type(data) ~= "table" then return false end
+    for k, v in pairs(data) do
+        local h = State.Elements[k]
+        if h and h.Set then
+            pcall(h.Set, v, true)   -- quiet restore, no callbacks
+        end
+    end
+    State.CurrentConfig = name
+    State.LastConfig = name
+    if State.ConfigNameBox then State.ConfigNameBox:Set(name) end
+    if not quiet then self:SaveAutoload() end
+    return true
+end
+
+function SaveManager:DeleteConfig(name)
+    name = trim(name)
+    if name == "" or not isfile(fullPath(name)) then return false end
+    delfile(fullPath(name))
+    self:RefreshList()
+    return true
+end
+
+function SaveManager:SaveAutoload()
+    ensureDir(dir())
+    writefile(autoloadPath(), HttpService:JSONEncode({
+        enabled = State.Autoload,
+        config = State.LastConfig,
     }))
 end
 
+function SaveManager:LoadAutoloadConfig()
+    if not isfile(autoloadPath()) then return self end
+    local ok, data = pcall(function() return HttpService:JSONDecode(readfile(autoloadPath())) end)
+    if ok and type(data) == "table" then
+        State.Autoload = data.enabled or false
+        State.LastConfig = data.config or ""
+    end
+    if State.Autoload and State.LastConfig ~= "" then
+        self:LoadConfig(State.LastConfig, true)
+    end
+    return self
+end
 
-function SaveManager:ListConfigs()
-    local list = {}
-    if not (isfolder and isfolder(SaveManager.Folder)) then return list end
-    for _, f in ipairs(listfiles(SaveManager.Folder)) do
-        if f:sub(-5) == ".json" and not f:match("_global") then
-            table.insert(list, f:gsub(".*[\\/]", ""):gsub("%.json$", ""))
-        end
+function SaveManager:RefreshList()
+    if not State.ConfigList then return end
+    local list = self:ListConfigs()
+    if #list > 0 and State.ConfigList.SetOptions then
+        State.ConfigList:SetOptions(list)
     end
     return list
 end
 
-
-local function encodeValue(t, v)
-    if t == "Color" and v then
-        return { r = math.round(v.R * 255), g = math.round(v.G * 255), b = math.round(v.B * 255) }
-    end
-    if t == "Keybind" and v then return v.Name end
-    return v
-end
-
-
-local function decodeValue(t, v)
-    if t == "Color" and type(v) == "table" then
-        return Color3.fromRGB(
-            math.clamp(v.r or 255, 0, 255),
-            math.clamp(v.g or 255, 0, 255),
-            math.clamp(v.b or 255, 0, 255)
-        )
-    end
-    if t == "Keybind" and type(v) == "string" then
-        return Enum.KeyCode[v] or Enum.KeyCode.Unknown
-    end
-    return v
-end
-
-
-local function keyFor(e)
-    return (e.Tab or "") .. "|" .. (e.Box or "") .. "|" .. (e.Key or "")
-end
-
-
-local function buildSaveData()
-    local ui = {}
-    for _, e in ipairs(Elements) do
-        local ok, v = pcall(e.Get)
-        if ok and v ~= nil then ui[keyFor(e)] = encodeValue(e.Type, v) end
-    end
-    return { Version = 1, UI = ui }
-end
-
-
--- CREATE: refuses to touch an existing config
-function SaveManager:CreateConfig(name)
-    local n = sanitize(name)
-    if n == "" then return false end
-    if isfile and isfile(configPath(n)) then return false end
-    ensureFolder()
-    local ok = pcall(writefile, configPath(n), HttpService:JSONEncode(buildSaveData()))
-    if ok then LastConfig = n end
-    SaveManager:SaveGlobal()
-    return ok
-end
-
-
--- OVERWRITE: only an existing config
-function SaveManager:SaveConfig(name)
-    local n = sanitize(name)
-    if n == "" then return false end
-    if not (isfile and isfile(configPath(n))) then return false end
-    ensureFolder()
-    local ok = pcall(writefile, configPath(n), HttpService:JSONEncode(buildSaveData()))
-    if ok then LastConfig = n end
-    SaveManager:SaveGlobal()
-    return ok
-end
-
-
-SaveManager.OverwriteConfig = SaveManager.SaveConfig
-
-
-function SaveManager:LoadConfig(name)
-    local n = sanitize(name)
-    local p = configPath(n)
-    if not (isfile and isfile(p)) then return false end
-    local ok, data = pcall(HttpService.JSONDecode, HttpService, readfile(p))
-    if not ok or type(data) ~= "table" or type(data.UI) ~= "table" then return false end
-    for _, e in ipairs(Elements) do
-        local v = data.UI[keyFor(e)]
-        if v ~= nil then
-            pcall(e.Set, decodeValue(e.Type, v), true)
-        end
-    end
-    LastConfig = n
-    SaveManager:SaveGlobal()
-    return true
-end
-
-
-function SaveManager:DeleteConfig(name)
-    if isfile and isfile(configPath(name)) then delfile(configPath(name)) end
-    if LastConfig == sanitize(name) then LastConfig = nil end
-    SaveManager:SaveGlobal()
-    return true
-end
-
-
-function SaveManager:RenameConfig(oldName, newName)
-    oldName, newName = sanitize(oldName), sanitize(newName)
-    if not (isfile and isfile(configPath(oldName))) then return false end
-    if isfile and isfile(configPath(newName)) then return false end
-    ensureFolder()
-    local ok = pcall(writefile, configPath(newName), readfile(configPath(oldName)))
-    if not ok then return false end
-    delfile(configPath(oldName))
-    if LastConfig == oldName then LastConfig = newName end
-    SaveManager:SaveGlobal()
-    return true
-end
-
-
-function SaveManager:LoadLastConfig()
-    if LastConfig then return SaveManager:LoadConfig(LastConfig) end
-    return false
-end
-
-
-local function registerElement(tabName, boxTitle, m, text, handle)
-    if BuildingUI then return end
-    if not handle or not handle.Get then return end
-    local t
-    if m == "AddCheckbox" then t = "Checkbox"
-    elseif m == "AddSlider" then t = "Slider"
-    elseif m == "AddCombo" then t = "Combo"
-    elseif m == "AddKeybind" then t = "Keybind"
-    elseif m == "AddColorPicker" then t = "Color"
-    elseif m == "AddTextBox" then t = "Textbox"
-    else return end
-    local e = { Tab = tabName, Box = boxTitle, Key = tostring(text), Type = t, Get = handle.Get }
-    if handle.Set then
-        e.Set = function(v) return handle.Set(v, true) end
-    end
-    table.insert(Elements, e)
-end
-
-
--- CALL THIS RIGHT AFTER CreateWindow, BEFORE any CreateTab
-function SaveManager:Init(window, opts)
+--// UI ------------------------------------------------------------------
+-- call at the very end, after all your tabs are built
+function SaveManager:BuildConfigSection(tab, opts)
+    State.Capturing = false     -- config UI must never save itself
     opts = opts or {}
-    WindowRef = window
-    if opts.Folder then SaveManager.Folder = tostring(opts.Folder) end
-    SaveManager:LoadGlobal()
-    if opts.LoadOnStart ~= nil then LoadOnStart = opts.LoadOnStart == true end
+    local E = tab:CreateBox("Configs", opts.Column or 2)
 
-    local origCreateTab = window.CreateTab
-    window.CreateTab = function(self, name)
-        local tab = origCreateTab(self, name)
-        local origCreateBox = tab.CreateBox
-        tab.CreateBox = function(_, boxTitle, column, startCollapsed)
-            local box = origCreateBox(tab, boxTitle, column, startCollapsed)
-            for _, m in ipairs({ "AddLabel", "AddButton", "AddCheckbox", "AddSlider", "AddCombo", "AddKeybind", "AddColorPicker", "AddTextBox" }) do
-                local orig = box[m]
-                if orig then
-                    box[m] = function(self2, text, ...)
-                        local h = orig(self2, text, ...)
-                        registerElement(name, boxTitle, m, text, h)
-                        return h
-                    end
-                end
-            end
-            return box
-        end
-        return tab
-    end
-    return self
-end
+    local NameBox = E:AddTextBox("Config Name", "", nil)
+    State.ConfigNameBox = NameBox
 
-
--- Obsidian-style: call AFTER all UI is built, pass it the Settings tab object
-function SaveManager:AddConfigSection(tab, opts)
-    opts = opts or {}
-    BuildingUI = true
-    local box = tab:CreateBox(opts.Title or "Configs", opts.Column or 1)
-    box:AddLabel("Configs")
-
-    local nameTb = box:AddTextBox("Config Name", LastConfig or "")
-
-    local combo
-    local function refreshCombo(sel)
-        if combo and combo.SetOptions then
-            combo.SetOptions(SaveManager:ListConfigs())
-            if sel then combo.Set(sel) end
-        end
-    end
-
-    combo = box:AddCombo("Configs", SaveManager:ListConfigs(), LastConfig, function(v)
-        if v and v ~= "" then
-            if SaveManager:LoadConfig(v) then nameTb.Set(v) end
+    local Ddl = E:AddCombo("Saved Configs", {}, "", function(name)
+        if name and name ~= "" then
+            State.CurrentConfig = name
+            if State.ConfigNameBox then State.ConfigNameBox:Set(name) end
+            self:LoadConfig(name)
         end
     end)
+    State.ConfigList = Ddl
 
-    box:AddCheckbox("Load on Start", LoadOnStart, function(v)
-        LoadOnStart = v == true
-        SaveManager:SaveGlobal()
+    E:AddCheckbox("Load on Start", State.Autoload, function(v)
+        State.Autoload = v
+        self:SaveAutoload()
     end)
 
-    box:AddButton("Create", function()
-        local n = nameTb.Get()
-        if n and n ~= "" and SaveManager:CreateConfig(n) then
-            nameTb.Set(n)
-            refreshCombo(n)
-        end
+    E:AddButton("Create Config", function()
+        if self:CreateConfig(NameBox:Get()) then self:RefreshList() end
     end)
 
-    box:AddButton("Overwrite", function()
-        local n = nameTb.Get()
-        if (not n or n == "") and combo then n = combo.Get() end
-        if n and n ~= "" and SaveManager:SaveConfig(n) then
-            nameTb.Set(n)
-            refreshCombo(n)
-        end
+    E:AddButton("Save / Overwrite", function()
+        if self:SaveConfig(NameBox:Get()) then self:RefreshList() end
     end)
 
-    box:AddButton("Load", function()
-        local n = nameTb.Get()
-        if (not n or n == "") and combo then n = combo.Get() end
-        if n and n ~= "" and SaveManager:LoadConfig(n) then
-            nameTb.Set(n)
-            refreshCombo(n)
-        end
+    E:AddButton("Load Selected", function()
+        if State.CurrentConfig ~= "" then self:LoadConfig(State.CurrentConfig) end
     end)
 
-    box:AddButton("Delete", function()
-        local n = nameTb.Get()
-        if (not n or n == "") and combo then n = combo.Get() end
-        if n and n ~= "" and SaveManager:DeleteConfig(n) then
-            nameTb.Set("")
-            refreshCombo()
+    E:AddButton("Delete Selected", function()
+        if State.CurrentConfig ~= "" then
+            self:DeleteConfig(State.CurrentConfig)
         end
     end, true)
 
-    BuildingUI = false
-
-    if LoadOnStart and LastConfig then
-        task.defer(function() SaveManager:LoadConfig(LastConfig) end)
-    end
-
-    return box
+    self:RefreshList()
+    return self
 end
-
 
 return SaveManager

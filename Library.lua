@@ -60,6 +60,19 @@
           Rotation/TextColor3 — universally tweenable properties. No
           GroupTransparency anywhere (some environments choke on it).
 
+    PATCH ADDITIONS (config save/load support):
+    20. AddSlider returns handle with Set(v, noCall) — restores value,
+        updates the value label + fill, and only fires the callback when
+        noCall is false.
+    21. AddCombo returns handle with Set(v) and SetOptions(list) — Set
+        selects an option (updates button text + row highlight + callback),
+        SetOptions rebuilds the dropdown entries.
+    22. AddKeybind returns handle with Set(k) — restores the bound key.
+    23. AddColorPicker returns handle with Set(c) — restores the color and
+        the swatch.
+    24. NEW E:AddTextBox(text, default, callback, risky) — plain text input
+        (commits on Enter). Returns {Get, Set}.
+
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
         local Window = Library:CreateWindow("menu", {
@@ -856,6 +869,14 @@ function Library:CreateWindow(title, opts)
                     Fill.Size = UDim2.new(rel, 0, 1, 0)
                     if callback then callback(value) end
                 end
+                -- programmatic setter (added for config save/load): noCall
+                -- true means restore silently, no callback fire.
+                local function set(v, noCall)
+                    value = math.floor(math.clamp(v or min, min, max))
+                    ValueLabel.Text = tostring(value) .. suffix
+                    Fill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
+                    if callback and not noCall then callback(value) end
+                end
                 Track.InputBegan:Connect(function(input)
                     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                         dragging = true
@@ -872,13 +893,14 @@ function Library:CreateWindow(title, opts)
                         dragging = false
                     end
                 end)
-                return { Get = function() return value end }
+                return { Get = function() return value end, Set = set }
             end
 
 
             -- dropdown (item 10 + 19): bordered track box, accent outline
             -- while open, slides open with a rotating chevron. Selected row
             -- uses per-row state objects so highlights never get stuck.
+            -- SetOptions rebuilds the list (added for config load).
             function E:AddCombo(text, options, default, callback, risky)
                 options = options or {}
                 local selected = default or options[1]
@@ -924,59 +946,78 @@ function Library:CreateWindow(title, opts)
                 })
                 new("UIListLayout", { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder, Parent = List })
 
+                -- forward declarations so builder + closures share upvalues
                 local optionsUi = {}
-                for _, opt in ipairs(options) do
-                    -- one fresh table PER option: each row owns its own state,
-                    -- so closures can never share/overwrite each other
-                    local row = {
-                        opt = opt,
-                    }
-                    local OptBtn = panel({
-                        Size = UDim2.new(1, 0, 0, 15), BackgroundColor3 = Theme.Panel,
-                        BorderColor3 = Theme.Border, Parent = List,
-                    })
-                    row.btn = OptBtn
-                    local Bar = new("Frame", {
-                        Size = UDim2.new(0, 3, 1, -4), Position = UDim2.new(0, 3, 0, 2),
-                        BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, Parent = OptBtn,
-                    })
-                    bindAccentColor(Bar, "BackgroundColor3")
-                    row.bar = Bar
-                    local OptLbl = new("TextLabel", {
-                        Text = tostring(opt), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
-                        BackgroundTransparency = 1, Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(1, -12, 1, 0),
-                        TextXAlignment = Enum.TextXAlignment.Left, Parent = OptBtn,
-                    })
-                    row.lbl = OptLbl
-                    local OptClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = OptBtn })
+                local refreshSelected
+                local setOpen
 
-                    function row:SetSelected(v)
-                        if activeTweens[self.btn] then activeTweens[self.btn]:Cancel() end
-                        self.bar.Visible = v
-                        self.lbl.TextColor3 = v and Theme.Text or Theme.SubText
-                        self.btn.BackgroundColor3 = v and Theme.Header or Theme.Panel
+                local function buildOptions(list)
+                    -- kill the old rows before rebuilding
+                    for _, row in ipairs(optionsUi) do
+                        if row.btn then row.btn:Destroy() end
                     end
-                    OptClick.MouseEnter:Connect(function()
-                        if row.opt ~= selected then tweenBg(OptBtn, Theme.Header) end
-                    end)
-                    OptClick.MouseLeave:Connect(function()
-                        if row.opt ~= selected then tweenBg(OptBtn, Theme.Panel) end
-                    end)
-                    OptClick.MouseButton1Click:Connect(function()
-                        selected = row.opt
-                        BtnLbl.Text = tostring(selected)
-                        for _, e in ipairs(optionsUi) do e:SetSelected(e.opt == selected) end
-                        if callback then callback(selected) end
-                        setOpen(false)
-                    end)
-                    table.insert(optionsUi, row)
+                    optionsUi = {}
+                    options = list or options
+
+                    -- keep the selection valid against the new option list
+                    local found = false
+                    for _, opt in ipairs(options) do
+                        if opt == selected then found = true break end
+                    end
+                    if not found then selected = options[1] end
+                    BtnLbl.Text = tostring(selected)
+
+                    for _, opt in ipairs(options) do
+                        -- one fresh table PER option: each row owns its own state,
+                        -- so closures can never share/overwrite each other
+                        local row = { opt = opt }
+                        local OptBtn = panel({
+                            Size = UDim2.new(1, 0, 0, 15), BackgroundColor3 = Theme.Panel,
+                            BorderColor3 = Theme.Border, Parent = List,
+                        })
+                        row.btn = OptBtn
+                        local Bar = new("Frame", {
+                            Size = UDim2.new(0, 3, 1, -4), Position = UDim2.new(0, 3, 0, 2),
+                            BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Visible = false, Parent = OptBtn,
+                        })
+                        bindAccentColor(Bar, "BackgroundColor3")
+                        row.bar = Bar
+                        local OptLbl = new("TextLabel", {
+                            Text = tostring(opt), Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
+                            BackgroundTransparency = 1, Position = UDim2.new(0, 9, 0, 0), Size = UDim2.new(1, -12, 1, 0),
+                            TextXAlignment = Enum.TextXAlignment.Left, Parent = OptBtn,
+                        })
+                        row.lbl = OptLbl
+                        local OptClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = OptBtn })
+
+                        function row:SetSelected(v)
+                            if activeTweens[self.btn] then activeTweens[self.btn]:Cancel() end
+                            self.bar.Visible = v
+                            self.lbl.TextColor3 = v and Theme.Text or Theme.SubText
+                            self.btn.BackgroundColor3 = v and Theme.Header or Theme.Panel
+                        end
+                        OptClick.MouseEnter:Connect(function()
+                            if row.opt ~= selected then tweenBg(OptBtn, Theme.Header) end
+                        end)
+                        OptClick.MouseLeave:Connect(function()
+                            if row.opt ~= selected then tweenBg(OptBtn, Theme.Panel) end
+                        end)
+                        OptClick.MouseButton1Click:Connect(function()
+                            selected = row.opt
+                            BtnLbl.Text = tostring(selected)
+                            refreshSelected()
+                            if callback then callback(selected) end
+                            setOpen(false)
+                        end)
+                        table.insert(optionsUi, row)
+                    end
                 end
 
-                local function refreshSelected()
+                refreshSelected = function()
                     for _, e in ipairs(optionsUi) do e:SetSelected(e.opt == selected) end
                 end
 
-                local function setOpen(v)
+                setOpen = function(v)
                     open = v
                     local listH = (#options * 15) + math.max(0, #options - 1)
                     -- slide the list out/in (Holder clips so it looks like a drawer)
@@ -995,8 +1036,24 @@ function Library:CreateWindow(title, opts)
                 end
                 BtnClick.MouseButton1Click:Connect(function() setOpen(not open) end)
 
-                refreshSelected() -- mark the default selection immediately
-                return { Get = function() return selected end }
+                buildOptions(options)
+
+                -- programmatic setter/option-rebuild (added for config save/load)
+                return {
+                    Get = function() return selected end,
+                    Set = function(v)
+                        selected = v
+                        BtnLbl.Text = tostring(selected)
+                        refreshSelected()
+                        if callback then callback(selected) end
+                        setOpen(false)
+                    end,
+                    SetOptions = function(list)
+                        buildOptions(list)
+                        -- rebuild in place if the list is currently open
+                        if open then setOpen(true) end
+                    end,
+                }
             end
 
 
@@ -1024,16 +1081,19 @@ function Library:CreateWindow(title, opts)
                     listening = true
                     KeyLbl.Text = "[...]"
                 end)
+                local function set(newKey)
+                    key = newKey
+                    KeyLbl.Text = "[" .. key.Name .. "]"
+                end
                 UserInputService.InputBegan:Connect(function(input, gpe)
                     if listening and input.UserInputType == Enum.UserInputType.Keyboard then
-                        key = input.KeyCode
-                        KeyLbl.Text = "[" .. key.Name .. "]"
+                        set(input.KeyCode)
                         listening = false
                     elseif not gpe and input.KeyCode == key and callback then
                         callback(key)
                     end
                 end)
-                return { Get = function() return key end }
+                return { Get = function() return key end, Set = set }
             end
 
 
@@ -1094,7 +1154,52 @@ function Library:CreateWindow(title, opts)
                         if callback then callback(c) end
                     end, text, Swatch.AbsolutePosition)
                 end)
-                return { Get = function() return color end }
+                local function set(c)
+                    color = c
+                    Swatch.BackgroundColor3 = c
+                end
+                return { Get = function() return color end, Set = set }
+            end
+
+
+            -- text input (added for config save/load): commits on Enter,
+            -- returns {Get, Set}. No callback fire on Set.
+            function E:AddTextBox(text, default, callback, risky)
+                local value = default or ""
+                local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = Content })
+                new("TextLabel", {
+                    Text = text, Font = FONT, TextSize = 13, TextColor3 = labelColor(risky),
+                    BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 14),
+                    TextXAlignment = Enum.TextXAlignment.Left, Parent = Holder,
+                })
+                local Entry = panel({
+                    Position = UDim2.new(0, 0, 0, 16), Size = UDim2.new(1, 0, 0, 14),
+                    BackgroundColor3 = Theme.Track, Parent = Holder,
+                })
+                local Input = new("TextBox", {
+                    Text = value, PlaceholderText = text, Font = FONT, TextSize = 12,
+                    TextColor3 = Theme.Text, PlaceholderColor3 = Theme.SubText,
+                    BackgroundTransparency = 1,
+                    Position = UDim2.new(0, 3, 0, 0), Size = UDim2.new(1, -6, 1, 0),
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextTruncate = Enum.TextTruncate.AtEnd,
+                    ClearTextOnFocus = false,
+                    Parent = Entry,
+                })
+                local function commit()
+                    value = Input.Text
+                    if callback then callback(value) end
+                end
+                Input.FocusLost:Connect(function(enter)
+                    if enter then commit() end
+                end)
+                return {
+                    Get = function() return value end,
+                    Set = function(v)
+                        value = v or ""
+                        Input.Text = value
+                    end,
+                }
             end
 
 

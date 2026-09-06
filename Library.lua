@@ -1176,8 +1176,8 @@ function Library:CreateWindow(title, opts)
 
             -- plain bindable key for YOUR OWN features. Does not affect the
             -- menu's own show/hide key -- use AddMenuKeybind for that.
-            -- Supports modes (Hold / Toggle / Always): LEFT-click to rebind,
-            -- RIGHT-click (or click the mode chip) to cycle the mode.
+            -- LEFT-click the keybox to rebind; RIGHT-click it to pick a mode
+            -- (Hold / Toggle / Always) from a tiny popup menu.
             -- Callback fires with a boolean (active state) whenever it
             -- changes. Handle extra method: GetMode()/SetMode(m).
             function E:AddKeybind(text, default, callback, risky)
@@ -1185,29 +1185,17 @@ function Library:CreateWindow(title, opts)
                 local mode = "Toggle" -- Hold / Toggle / Always
                 local active = false
                 local listening = false
-                local MODES = { "Hold", "Toggle", "Always" }
 
-                local Row = new("Frame", { Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Parent = Content })
+                local Row = new("Frame", { Size = UDim2.new(1, 0, 0, 15), BackgroundTransparency = 1, Parent = Content })
                 new("TextLabel", {
                     Text = text, Font = FONT, TextSize = 13, TextColor3 = labelColor(risky),
-                    BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, -106, 1, 0),
+                    BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, -50, 1, 0),
                     TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = Row,
                 })
 
-                -- mode chip (sits between the label and the key button)
-                local ModeBtn = panel({
-                    BackgroundColor3 = Theme.Track,
-                    Position = UDim2.new(1, -98, 0, 0), Size = UDim2.new(0, 50, 0, 18), Parent = Row,
-                })
-                local ModeLbl = new("TextLabel", {
-                    Text = mode, Font = FONT_BOLD, TextSize = 12, TextColor3 = Theme.Text,
-                    BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = ModeBtn,
-                })
-                local ModeClick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = ModeBtn })
-
                 local KeyBtn = panel({
                     BackgroundColor3 = Theme.Track,
-                    Position = UDim2.new(1, -46, 0, 0), Size = UDim2.new(0, 46, 0, 18), Parent = Row,
+                    Position = UDim2.new(1, -46, 0, 0), Size = UDim2.new(0, 46, 0, 15), Parent = Row,
                 })
                 local KeyLbl = new("TextLabel", {
                     Text = "[" .. key.Name .. "]", Font = FONT, TextSize = 12, TextColor3 = Theme.SubText,
@@ -1224,7 +1212,6 @@ function Library:CreateWindow(title, opts)
 
                 local function setMode(m)
                     mode = m
-                    ModeLbl.Text = mode
                     -- Always = instantly on, others reset to off
                     if mode == "Always" then
                         setActive(true)
@@ -1233,28 +1220,16 @@ function Library:CreateWindow(title, opts)
                     end
                 end
 
-                local function cycleMode()
-                    local i = 1
-                    for n, m in ipairs(MODES) do if m == mode then i = n end end
-                    setMode(MODES[i % #MODES + 1])
-                end
-
-                -- LEFT-click the key = rebind; RIGHT-click anywhere on the
-                -- keybind pops up the mode menu (Hold / Toggle / Always)
+                -- LEFT-click the keybox = rebind; RIGHT-click = mode menu
                 KeyClick.MouseButton1Click:Connect(function()
                     listening = true
                     KeyLbl.Text = "[...]"
                 end)
-                local function wireRightClick(btn)
-                    btn.InputBegan:Connect(function(input)
-                        if input.UserInputType == Enum.UserInputType.MouseButton2 then
-                            openKeybindMenu(setMode, function() return mode end, input.Position)
-                        end
-                    end)
-                end
-                wireRightClick(KeyClick)
-                wireRightClick(ModeClick)
-                ModeClick.MouseButton1Click:Connect(cycleMode)
+                KeyClick.InputBegan:Connect(function(input)
+                    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                        openKeybindMenu(setMode, function() return mode end, input.Position)
+                    end
+                end)
 
                 local function set(newKey)
                     key = newKey or Enum.KeyCode.Unknown

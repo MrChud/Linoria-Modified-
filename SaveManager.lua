@@ -114,11 +114,18 @@ local function ignored(key)
     return State.Ignore[key] or (State.IgnoreTheme and THEME_KEYS[key])
 end
 
+-- stores values + keybind modes (Hold/Toggle/Always)
 local function snapshot()
     local data = {}
     for k, h in pairs(State.Elements) do
         if not ignored(k) then
-            data[k] = encode(h.Get(), State.Types[k])
+            local t = State.Types[k]
+            local v = h.Get()
+            if h.GetMode and t == "AddKeybind" then
+                data[k] = { __keybind = true, name = v.Name, mode = h.GetMode() }
+            else
+                data[k] = encode(v, t)
+            end
         end
     end
     return data
@@ -239,6 +246,7 @@ function SaveManager:SaveConfig(name)
     return true
 end
 
+-- restores values silently + keybind modes
 function SaveManager:LoadConfig(name)
     name = trim(name)
     if name == "" then return false end
@@ -252,6 +260,10 @@ function SaveManager:LoadConfig(name)
         local h = State.Elements[k]
         if h and h.Set then
             pcall(h.Set, decode(v, State.Types[k]), true)
+            -- restore the keybind mode (Hold/Toggle/Always) too
+            if h.SetMode and type(v) == "table" and v.__keybind and v.mode then
+                pcall(h.SetMode, v.mode)
+            end
         end
     end
     State.CurrentConfig = name

@@ -712,6 +712,69 @@ function Library:CreateWindow(title, opts)
     end)
 
 
+    -- === shared keybind mode context menu (Linoria-style) ===
+    -- Right-clicking any AddKeybind pops this up. Pick Hold/Toggle/Always,
+    -- click anywhere else (or choose) to dismiss it. One menu per window.
+    local KeybindMenu = panel({
+        Name = "KeybindMenu", Visible = false, ZIndex = 60,
+        Size = UDim2.new(0, 86, 0, 60),
+        BackgroundColor3 = Theme.Panel, Parent = ScreenGui,
+    })
+    local contextApply -- function(mode) -- applies the picked mode to the target keybind
+    local contextGetMode -- function() -- returns the target's current mode (for the checkmark)
+    local KMRows = {}
+    for i, m in ipairs({ "Hold", "Toggle", "Always" }) do
+        local row = panel({
+            Size = UDim2.new(1, -6, 0, 16), Position = UDim2.new(0, 3, 0, 3 + (i - 1) * 18),
+            BackgroundColor3 = Theme.Track, Parent = KeybindMenu,
+        })
+        local rlbl = new("TextLabel", {
+            Text = m, Font = FONT, TextSize = 12, TextColor3 = Theme.Text,
+            BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = row,
+        })
+        local rclick = new("TextButton", { Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = row })
+        rclick.MouseEnter:Connect(function() tweenBg(row, Theme.Header) end)
+        rclick.MouseLeave:Connect(function() tweenBg(row, Theme.Track) end)
+        rclick.MouseButton1Click:Connect(function()
+            if contextApply then contextApply(m) end
+            contextApply, contextGetMode = nil, nil
+            KeybindMenu.Visible = false
+        end)
+        KMRows[m] = { row = row, lbl = rlbl }
+    end
+
+    local function refreshKeybindMenu()
+        local cur = contextGetMode and contextGetMode() or nil
+        for m, e in pairs(KMRows) do
+            local on = m == cur
+            e.lbl.TextColor3 = on and Theme.Accent or Theme.Text
+            e.lbl.Text = (on and "✓ " or "  ") .. m
+        end
+    end
+
+    local function openKeybindMenu(applyFn, getModeFn, pos)
+        contextApply = applyFn
+        contextGetMode = getModeFn
+        KeybindMenu.Position = UDim2.new(0, pos.X + 6, 0, pos.Y + 6)
+        refreshKeybindMenu()
+        KeybindMenu.Visible = true
+        -- dismiss on the next click that lands OUTSIDE the menu
+        task.defer(function()
+            local conn
+            conn = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.MouseButton2 then
+                    return
+                end
+                local abs, sz = KeybindMenu.AbsolutePosition, KeybindMenu.AbsoluteSize
+                local p = input.Position
+                local inside = p.X >= abs.X and p.X <= abs.X + sz.X and p.Y >= abs.Y and p.Y <= abs.Y + sz.Y
+                if not inside then KeybindMenu.Visible = false end
+                conn:Disconnect()
+            end)
+        end)
+    end
+
+
     local Window = { Tabs = {} }
     local activeTabBtn -- which tab button is currently selected (hover guard)
 
@@ -1177,7 +1240,7 @@ function Library:CreateWindow(title, opts)
                 end
 
                 -- LEFT-click the key = rebind; RIGHT-click anywhere on the
-                -- keybind = cycle the mode
+                -- keybind pops up the mode menu (Hold / Toggle / Always)
                 KeyClick.MouseButton1Click:Connect(function()
                     listening = true
                     KeyLbl.Text = "[...]"
@@ -1185,7 +1248,7 @@ function Library:CreateWindow(title, opts)
                 local function wireRightClick(btn)
                     btn.InputBegan:Connect(function(input)
                         if input.UserInputType == Enum.UserInputType.MouseButton2 then
-                            cycleMode()
+                            openKeybindMenu(setMode, function() return mode end, input.Position)
                         end
                     end)
                 end

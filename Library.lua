@@ -1183,7 +1183,16 @@ function Library:CreateWindow(title, opts)
                         Window:SetToggleKeybind(key) -- <- the actual fix
                     end
                 end)
-                return { Get = function() return key end }
+                -- Set restores the saved menu key on config load: updates the
+                -- label AND rewires the real menu toggle
+                return {
+                    Get = function() return key end,
+                    Set = function(newKey)
+                        key = newKey
+                        KeyLbl.Text = "[" .. key.Name .. "]"
+                        Window:SetToggleKeybind(key)
+                    end,
+                }
             end
 
 

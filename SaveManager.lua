@@ -264,9 +264,10 @@ end
 
 function SaveManager:DeleteConfig(name)
     name = trim(name)
-    if name == "" or not isfile(fullPath(name)) then return false end
+    if name == "" or not isfile(fullPath(name)) then print("[SaveManager] nothing to delete"); return false end
     delfile(fullPath(name))
     State.Known[name] = nil
+    if State.CurrentConfig == name then State.CurrentConfig = "" end
     self:RefreshList()
     print("[SaveManager] deleted:", name)
     return true
@@ -290,13 +291,11 @@ function SaveManager:LoadAutoloadConfig()
     return self
 end
 
+-- always refreshes, even to an empty list (deleting the last config clears
+-- the dropdown instead of leaving the old entry stuck)
 function SaveManager:RefreshList()
     if not State.ConfigList then return end
-    local list = self:ListConfigs()
-    if #list > 0 then
-        State.ConfigList.SetOptions(list) -- dot call: handles are plain functions
-    end
-    return list
+    State.ConfigList.SetOptions(self:ListConfigs())
 end
 
 --// UI ------------------------------------------------------------------
@@ -317,6 +316,14 @@ function SaveManager:BuildConfigSection(tab, opts)
     end)
     State.ConfigList = Ddl
 
+    -- fall back to whatever the dropdown is DISPLAYING even if the row was
+    -- never clicked again (fixes delete/load on a single config)
+    local function selectedName()
+        if State.CurrentConfig ~= "" then return State.CurrentConfig end
+        if State.ConfigList then return State.ConfigList.Get() or "" end
+        return ""
+    end
+
     E:AddCheckbox("Load on Start", State.Autoload, function(v)
         State.Autoload = v
         self:SaveAutoload()
@@ -331,11 +338,13 @@ function SaveManager:BuildConfigSection(tab, opts)
     end)
 
     E:AddButton("Load Selected", function()
-        if State.CurrentConfig ~= "" then self:LoadConfig(State.CurrentConfig) end
+        local name = selectedName()
+        if name ~= "" then self:LoadConfig(name) end
     end)
 
     E:AddButton("Delete Selected", function()
-        if State.CurrentConfig ~= "" then self:DeleteConfig(State.CurrentConfig) end
+        local name = selectedName()
+        if name ~= "" then self:DeleteConfig(name) end
     end, true)
 
     self:RefreshList()

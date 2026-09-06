@@ -1,4 +1,4 @@
--- SaveManager.lua-
+-- SaveManager.lua
 local HttpService = game:GetService("HttpService")
 
 local SaveManager = {}
@@ -17,6 +17,7 @@ local State = {
     Types = {},
     Ignore = {},
     IgnoreTheme = false,
+    Known = {},           -- configs we've created/saved this session
     ConfigNameBox = nil,
     ConfigList = nil,
 }
@@ -151,7 +152,8 @@ end
 
 function SaveManager:SetFolder(folder)
     State.Folder = trim(folder):gsub("/+$", ""):gsub("\\+$", "")
-    ensureDir(dir())
+    ensureDir(State.Folder)
+    print("[SaveManager] folder:", State.Folder == "" and "(workspace root)" or State.Folder)
     return self
 end
 
@@ -178,19 +180,32 @@ function SaveManager:SetLoadOnStart(bool)
 end
 
 --// file ops ------------------------------------------------------------
-function SaveManager:ListConfigs()
-    local out = {}
-    local d = dir()
-    local ok, files
-    if d == "" then
-        ok, files = pcall(listfiles, "")
-    else
-        ok, files = pcall(listfiles, d)
+local function harvest(files, out, seen)
+    for _, f in ipairs(files or {}) do
+        local n = tostring(f):gsub("\\", "/"):match("([^/]+)%.json$")
+        if n and n ~= "Autoload" and not seen[n] then
+            seen[n] = true
+            table.insert(out, n)
+        end
     end
-    if ok then
-        for _, f in ipairs(files) do
-            local n = tostring(f):gsub("\\", "/"):match("([^/]+)%.json$")
-            if n and n ~= "Autoload" then table.insert(out, n) end
+end
+
+function SaveManager:ListConfigs()
+    local out, seen = {}, {}
+    local d = dir()
+
+    if d ~= "" then
+        pcall(function() harvest(listfiles(d), out, seen) end)
+    end
+    -- fallback: also scan the workspace root just in case listing the
+    -- subfolder fails on your executor
+    pcall(function() harvest(listfiles(""), out, seen) end)
+
+    -- anything we created/saved this session always counts
+    for n in pairs(State.Known) do
+        if not seen[n] then
+            seen[n] = true
+            table.insert(out, n)
         end
     end
     table.sort(out)
@@ -206,7 +221,8 @@ function SaveManager:CreateConfig(name)
     if not ok then warn("[SaveManager] write failed:", err); return false end
     State.CurrentConfig = name
     State.LastConfig = name
-    print("[SaveManager] created:", name)
+    State.Known[name] = true
+    print("[SaveManager] created -> workspace/" .. fullPath(name))
     return true
 end
 
@@ -219,7 +235,8 @@ function SaveManager:SaveConfig(name)
     if not ok then warn("[SaveManager] write failed:", err); return false end
     State.CurrentConfig = name
     State.LastConfig = name
-    print("[SaveManager] saved:", name)
+    State.Known[name] = true
+    print("[SaveManager] saved -> workspace/" .. fullPath(name))
     return true
 end
 
@@ -230,7 +247,11 @@ end
 function SaveManager:LoadConfig(name)
     name = trim(name)
     if name == "" then return false end
-    if not isfile(fullPath(name)) then print("[SaveManager] not found:", name); return false end
+    if not isfile(fullPath(name)) and not State.Known[name] and not isfile(fullPath(name)) then
+        print("[SaveManager] not found:", name)
+        return false
+    end
+    local p = ensureDir(dir())
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(fullPath(name))) end)
     if not ok or type(data) ~= "table" then warn("[SaveManager] corrupt config:", name); return false end
     for k, v in pairs(data) do
@@ -241,7 +262,8 @@ function SaveManager:LoadConfig(name)
     end
     State.CurrentConfig = name
     State.LastConfig = name
-    if State.ConfigNameBox then State.ConfigNameBox:Set(name) end
+    State.Known[name] = true
+    if State.ConfigNameBox then State.ConfigNameBox.Set(name) end
     print("[SaveManager] loaded:", name)
     return true
 end
@@ -250,6 +272,7 @@ function SaveManager:DeleteConfig(name)
     name = trim(name)
     if name == "" or not isfile(fullPath(name)) then return false end
     delfile(fullPath(name))
+    State.Known[name] = nil
     self:RefreshList()
     print("[SaveManager] deleted:", name)
     return true
@@ -279,8 +302,8 @@ end
 function SaveManager:RefreshList()
     if not State.ConfigList then return end
     local list = self:ListConfigs()
-    if #list > 0 and State.ConfigList.SetOptions then
-        State.ConfigList:SetOptions(list)
+    if #list > 0 then
+        State.ConfigList.SetOptions(list)   -- dot call: handles are plain functions
     end
     return list
 end
@@ -297,7 +320,7 @@ function SaveManager:BuildConfigSection(tab, opts)
     local Ddl = E:AddCombo("Saved Configs", {}, "", function(name)
         if name and name ~= "" then
             State.CurrentConfig = name
-            if State.ConfigNameBox then State.ConfigNameBox:Set(name) end
+            if State.ConfigNameBox then State.ConfigNameBox.Set(name) end
             self:LoadConfig(name)
         end
     end)
@@ -309,11 +332,11 @@ function SaveManager:BuildConfigSection(tab, opts)
     end)
 
     E:AddButton("Create Config", function()
-        if self:CreateConfig(NameBox:Get()) then self:RefreshList() end
+        if self:CreateConfig(NameBox.Get()) then self:RefreshList() end
     end)
 
     E:AddButton("Save / Overwrite", function()
-        if self:SaveConfig(NameBox:Get()) then self:RefreshList() end
+        if self:SaveConfig(NameBox.Get()) then self:RefreshList() end
     end)
 
     E:AddButton("Load Selected", function()

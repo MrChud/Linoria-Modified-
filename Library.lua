@@ -70,8 +70,12 @@
     22. AddKeybind returns handle with Set(k) — restores the bound key.
     23. AddColorPicker returns handle with Set(c) — restores the color and
         the swatch.
-    24. NEW E:AddTextBox(text, default, callback, risky) — plain text input
-        (commits on Enter). Returns {Get, Set}.
+    24. NEW E:AddTextBox(text, default, callback, risky) — plain text input.
+        Returns {Get, Set}. Get reads the LIVE textbox text (so it works
+        even without pressing Enter).
+    25. ALL handles use Set(v, noCall) semantics — pass noCall=true to
+        restore a value WITHOUT firing its callback (used by config load).
+        Checkbox included.
 
     USAGE:
         local Library = loadstring(readfile("ModernUILibrary.lua"))()
@@ -818,12 +822,13 @@ function Library:CreateWindow(title, opts)
                     BackgroundTransparency = 1, Position = UDim2.new(0, 20, 0, 0), Size = UDim2.new(1, -20, 1, 0),
                     TextXAlignment = Enum.TextXAlignment.Left, Parent = Row,
                 })
-                local function set(v, fire)
+                -- noCall = true restores silently (used by config load)
+                local function set(v, noCall)
                     state = v
                     tweenTo(Fill, {
                         Size = UDim2.new(state and 1 or 0, 0, state and 1 or 0, 0),
                     }, 0.14)
-                    if fire ~= false and callback then callback(state) end
+                    if callback and not noCall then callback(state) end
                 end
                 Row.MouseButton1Click:Connect(function() set(not state) end)
                 return { Set = set, Get = function() return state end }
@@ -869,8 +874,7 @@ function Library:CreateWindow(title, opts)
                     Fill.Size = UDim2.new(rel, 0, 1, 0)
                     if callback then callback(value) end
                 end
-                -- programmatic setter (added for config save/load): noCall
-                -- true means restore silently, no callback fire.
+                -- programmatic setter: noCall = true restores silently
                 local function set(v, noCall)
                     value = math.floor(math.clamp(v or min, min, max))
                     ValueLabel.Text = tostring(value) .. suffix
@@ -1162,8 +1166,8 @@ function Library:CreateWindow(title, opts)
             end
 
 
-            -- text input (added for config save/load): commits on Enter,
-            -- returns {Get, Set}. No callback fire on Set.
+            -- text input (added for config save/load). Get returns the LIVE
+            -- textbox text, so it works even if you never pressed Enter.
             function E:AddTextBox(text, default, callback, risky)
                 local value = default or ""
                 local Holder = new("Frame", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Parent = Content })
@@ -1194,7 +1198,7 @@ function Library:CreateWindow(title, opts)
                     if enter then commit() end
                 end)
                 return {
-                    Get = function() return value end,
+                    Get = function() return Input.Text end,
                     Set = function(v)
                         value = v or ""
                         Input.Text = value

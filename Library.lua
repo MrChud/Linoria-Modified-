@@ -1,1364 +1,967 @@
---[[
-    Koi UI Library
-    Compact dark utility-style Roblox UI
+-- =====================================================================
+--  Drawing UI Library  |  bottom-tab layout, modern dark theme
+--  If nothing renders on your executor, change OPAQUE to 1 (some
+--  Drawing implementations invert Transparency).
+-- =====================================================================
+local OPAQUE = 0
 
-    Features:
-    - Window
-    - Tabs
-    - Sections
-    - Buttons
-    - Toggles
-    - Sliders
-    - Dropdowns
-    - Textboxes
-    - Keybinds
-    - Labels
-    - Notifications
-    - Window dragging
-    - UI toggle key
-    - Element keybinds
-    - Destroy
-]]
-
-local Library = {}
-
-local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
-local Player = Players.LocalPlayer
-
---------------------------------------------------
--- SETTINGS
---------------------------------------------------
-
-local COLORS = {
-    Background = Color3.fromRGB(13, 13, 15),
-    Main = Color3.fromRGB(17, 17, 19),
-    Secondary = Color3.fromRGB(20, 20, 23),
-    Element = Color3.fromRGB(24, 24, 27),
-
-    Border = Color3.fromRGB(58, 58, 63),
-    BorderDark = Color3.fromRGB(7, 7, 8),
-
-    Text = Color3.fromRGB(220, 220, 220),
-    SubText = Color3.fromRGB(135, 135, 140),
-    Disabled = Color3.fromRGB(80, 80, 85),
-
-    Accent = Color3.fromRGB(154, 102, 190),
-    AccentDark = Color3.fromRGB(105, 70, 135),
-
-    White = Color3.fromRGB(240, 240, 240),
+local Theme = {
+    Background   = Color3.fromRGB(17, 17, 20),
+    Topbar       = Color3.fromRGB(23, 23, 27),
+    Tabbar       = Color3.fromRGB(21, 21, 25),
+    Content      = Color3.fromRGB(19, 19, 23),
+    Section      = Color3.fromRGB(26, 26, 31),
+    SectionHead  = Color3.fromRGB(31, 31, 37),
+    Element      = Color3.fromRGB(34, 34, 40),
+    ElementHover = Color3.fromRGB(41, 41, 49),
+    Outline      = Color3.fromRGB(44, 44, 52),
+    Accent       = Color3.fromRGB(120, 170, 255),
+    Text         = Color3.fromRGB(236, 236, 240),
+    SubText      = Color3.fromRGB(150, 150, 160),
+    Off          = Color3.fromRGB(78, 78, 88),
+    Handle       = Color3.fromRGB(220, 220, 230),
 }
 
-local FONT = Enum.Font.Code
+local function sq()
+    local s = Drawing.new("Square")
+    s.Filled = true
+    s.Thickness = 1
+    s.Transparency = OPAQUE
+    s.Visible = false
+    return s
+end
 
---------------------------------------------------
--- UTILITIES
---------------------------------------------------
+local function txt(size)
+    local t = Drawing.new("Text")
+    t.Size = size or 13
+    t.Center = false
+    t.Outline = false
+    t.Transparency = OPAQUE
+    t.Visible = false
+    return t
+end
 
-local function Create(class, properties)
-    local object = Instance.new(class)
+local function circle()
+    local c = Drawing.new("Circle")
+    c.NumSides = 40
+    c.Filled = true
+    c.Thickness = 1
+    c.Transparency = OPAQUE
+    c.Visible = false
+    return c
+end
 
-    for property, value in pairs(properties or {}) do
-        object[property] = value
+local function contains(rect, m)
+    return m.X >= rect.x and m.X <= rect.x + rect.w and m.Y >= rect.y and m.Y <= rect.y + rect.h
+end
+
+local Library = {}
+Library.Windows = {}
+Library.OpenOverlay = nil
+Library.Drag = nil
+Library.Capture = nil
+
+-- ---------------------------------------------------------------------
+--  COLOR PICKER OVERLAY (shared by all pickers)
+-- ---------------------------------------------------------------------
+local CP = { open = nil }
+do
+    CP.size = 150
+    CP.gridN = 12
+    CP.sv = {}
+    for i = 1, CP.gridN * CP.gridN do
+        CP.sv[i] = sq()
+    end
+    CP.hue = {}
+    CP.hueN = 20
+    for i = 1, CP.hueN do
+        CP.hue[i] = sq()
+    end
+    CP.hueX, CP.hueY, CP.hueW, CP.hueH = 0, 0, 0, 8
+    CP.svX, CP.svY = 0, 0
+
+    function CP:HsvToRgb(h, s, v)
+        return Color3.fromHSV(h, s, v)
     end
 
-    return object
-end
-
-local function Corner(parent, radius)
-    local corner = Create("UICorner", {
-        CornerRadius = UDim.new(0, radius or 2),
-        Parent = parent
-    })
-
-    return corner
-end
-
-local function Stroke(parent, color, thickness)
-    local stroke = Create("UIStroke", {
-        Color = color or COLORS.Border,
-        Thickness = thickness or 1,
-        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-        Parent = parent
-    })
-
-    return stroke
-end
-
-local function Padding(parent, left, right, top, bottom)
-    return Create("UIPadding", {
-        PaddingLeft = UDim.new(0, left or 0),
-        PaddingRight = UDim.new(0, right or 0),
-        PaddingTop = UDim.new(0, top or 0),
-        PaddingBottom = UDim.new(0, bottom or 0),
-        Parent = parent
-    })
-end
-
-local function Tween(object, properties, duration)
-    local info = TweenInfo.new(
-        duration or 0.15,
-        Enum.EasingStyle.Quad,
-        Enum.EasingDirection.Out
-    )
-
-    return TweenService:Create(object, info, properties)
-end
-
-local function Clamp(value, min, max)
-    return math.max(min, math.min(max, value))
-end
-
-local function Round(value, decimals)
-    local mult = 10 ^ (decimals or 0)
-    return math.floor(value * mult + 0.5) / mult
-end
-
---------------------------------------------------
--- WINDOW
---------------------------------------------------
-
-function Library:CreateWindow(options)
-
-    options = options or {}
-
-    local Window = {}
-
-    Window.Title = options.Title or "Koi"
-    Window.SubTitle = options.SubTitle or "build: beta"
-    Window.ToggleKey = options.ToggleKey or Enum.KeyCode.Insert
-    Window.Visible = true
-    Window.Tabs = {}
-    Window.Elements = {}
-
-    --------------------------------------------------
-    -- SCREEN GUI
-    --------------------------------------------------
-
-    local ScreenGui = Create("ScreenGui", {
-        Name = "KoiUI",
-        ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    })
-
-    pcall(function()
-        ScreenGui.Parent = game:GetService("CoreGui")
-    end)
-
-    if not ScreenGui.Parent then
-        ScreenGui.Parent = Player:WaitForChild("PlayerGui")
-    end
-
-    Window.ScreenGui = ScreenGui
-
-    --------------------------------------------------
-    -- MAIN WINDOW
-    --------------------------------------------------
-
-    local Main = Create("Frame", {
-        Name = "Main",
-        Size = options.Size or UDim2.fromOffset(650, 430),
-        Position = UDim2.new(0.5, -325, 0.5, -215),
-        BackgroundColor3 = COLORS.Main,
-        BorderSizePixel = 0,
-        Parent = ScreenGui
-    })
-
-    Stroke(Main, COLORS.Border, 1)
-
-    Window.Main = Main
-
-    --------------------------------------------------
-    -- TOP BAR
-    --------------------------------------------------
-
-    local TopBar = Create("Frame", {
-        Name = "TopBar",
-        Size = UDim2.new(1, 0, 0, 38),
-        BackgroundColor3 = COLORS.Background,
-        BorderSizePixel = 0,
-        Parent = Main
-    })
-
-    Stroke(TopBar, COLORS.BorderDark, 1)
-
-    local Title = Create("TextLabel", {
-        Name = "Title",
-        Position = UDim2.fromOffset(9, 4),
-        Size = UDim2.new(0.6, 0, 0, 18),
-        BackgroundTransparency = 1,
-        Text = Window.Title,
-        TextColor3 = COLORS.White,
-        TextSize = 13,
-        Font = FONT,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = TopBar
-    })
-
-    local SubTitle = Create("TextLabel", {
-        Name = "SubTitle",
-        Position = UDim2.fromOffset(9, 20),
-        Size = UDim2.new(0.6, 0, 0, 13),
-        BackgroundTransparency = 1,
-        Text = Window.SubTitle,
-        TextColor3 = COLORS.SubText,
-        TextSize = 10,
-        Font = FONT,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = TopBar
-    })
-
-    --------------------------------------------------
-    -- DRAGGING
-    --------------------------------------------------
-
-    local dragging = false
-    local dragStart
-    local startPosition
-
-    TopBar.InputBegan:Connect(function(input)
-
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPosition = Main.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-
-        if not dragging then
+    function CP:Render()
+        if not self.open then
+            for _, o in ipairs(self.sv) do o.Visible = false end
+            for _, o in ipairs(self.hue) do o.Visible = false end
             return
         end
-
-        if input.UserInputType ~= Enum.UserInputType.MouseMovement then
-            return
+        local h, s, v = self.open.H, self.open.S, self.open.V
+        local n = self.gridN
+        local cell = self.size / n
+        for row = 0, n - 1 do
+            for col = 0, n - 1 do
+                local idx = row * n + col + 1
+                local o = self.sv[idx]
+                o.Position = Vector2.new(self.svX + col * cell, self.svY + row * cell)
+                o.Size = Vector2.new(cell + 1, cell + 1)
+                o.Color = Color3.fromHSV(h, col / (n - 1), 1 - row / (n - 1))
+                o.Visible = true
+            end
         end
-
-        local delta = input.Position - dragStart
-
-        Main.Position = UDim2.new(
-            startPosition.X.Scale,
-            startPosition.X.Offset + delta.X,
-            startPosition.Y.Scale,
-            startPosition.Y.Offset + delta.Y
-        )
-
-    end)
-
-    --------------------------------------------------
-    -- TAB BAR
-    --------------------------------------------------
-
-    local TabBar = Create("Frame", {
-        Name = "Tabs",
-        Position = UDim2.fromOffset(0, 38),
-        Size = UDim2.new(1, 0, 0, 32),
-        BackgroundColor3 = COLORS.Background,
-        BorderSizePixel = 0,
-        Parent = Main
-    })
-
-    Stroke(TabBar, COLORS.BorderDark, 1)
-
-    local TabLayout = Create("UIListLayout", {
-        FillDirection = Enum.FillDirection.Horizontal,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 0),
-        Parent = TabBar
-    })
-
-    --------------------------------------------------
-    -- CONTENT
-    --------------------------------------------------
-
-    local Content = Create("Frame", {
-        Name = "Content",
-        Position = UDim2.fromOffset(0, 70),
-        Size = UDim2.new(1, 0, 1, -70),
-        BackgroundTransparency = 1,
-        Parent = Main
-    })
-
-    --------------------------------------------------
-    -- VISIBILITY
-    --------------------------------------------------
-
-    function Window:SetVisible(value)
-        Window.Visible = value
-        Main.Visible = value
-    end
-
-    function Window:Toggle()
-        Window:SetVisible(not Window.Visible)
-    end
-
-    --------------------------------------------------
-    -- NOTIFICATIONS
-    --------------------------------------------------
-
-    local NotificationHolder = Create("Frame", {
-        Name = "Notifications",
-        AnchorPoint = Vector2.new(1, 1),
-        Position = UDim2.new(1, -15, 1, -15),
-        Size = UDim2.fromOffset(260, 400),
-        BackgroundTransparency = 1,
-        Parent = ScreenGui
-    })
-
-    local NotificationLayout = Create("UIListLayout", {
-        VerticalAlignment = Enum.VerticalAlignment.Bottom,
-        HorizontalAlignment = Enum.HorizontalAlignment.Right,
-        Padding = UDim.new(0, 6),
-        Parent = NotificationHolder
-    })
-
-    function Window:Notify(title, message, duration)
-
-        duration = duration or 3
-
-        local Notification = Create("Frame", {
-            Size = UDim2.fromOffset(250, 58),
-            BackgroundColor3 = COLORS.Main,
-            BorderSizePixel = 0,
-            Parent = NotificationHolder
-        })
-
-        Stroke(Notification, COLORS.Border, 1)
-        Corner(Notification, 2)
-
-        local Accent = Create("Frame", {
-            Size = UDim2.fromOffset(3, 58),
-            BackgroundColor3 = COLORS.Accent,
-            BorderSizePixel = 0,
-            Parent = Notification
-        })
-
-        local NTitle = Create("TextLabel", {
-            Position = UDim2.fromOffset(12, 7),
-            Size = UDim2.new(1, -18, 0, 16),
-            BackgroundTransparency = 1,
-            Text = title or "Notification",
-            TextColor3 = COLORS.White,
-            TextSize = 12,
-            Font = FONT,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = Notification
-        })
-
-        local NMessage = Create("TextLabel", {
-            Position = UDim2.fromOffset(12, 25),
-            Size = UDim2.new(1, -18, 0, 25),
-            BackgroundTransparency = 1,
-            Text = message or "",
-            TextColor3 = COLORS.SubText,
-            TextSize = 10,
-            Font = FONT,
-            TextWrapped = true,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            Parent = Notification
-        })
-
-        Notification.Position = UDim2.new(1, 20, 0, 0)
-
-        Tween(Notification, {
-            Position = UDim2.new(0, 0, 0, 0)
-        }):Play()
-
-        task.delay(duration, function()
-
-            if Notification and Notification.Parent then
-
-                local animation = Tween(Notification, {
-                    Position = UDim2.new(1, 20, 0, 0)
-                })
-
-                animation:Play()
-
-                animation.Completed:Wait()
-
-                Notification:Destroy()
-
-            end
-
-        end)
-
-    end
-
-    --------------------------------------------------
-    -- CREATE TAB
-    --------------------------------------------------
-
-    function Window:CreateTab(name)
-
-        local Tab = {}
-
-        Tab.Name = name
-        Tab.Sections = {}
-
-        --------------------------------------------------
-        -- TAB BUTTON
-        --------------------------------------------------
-
-        local Button = Create("TextButton", {
-            Name = name,
-            Size = UDim2.fromOffset(100, 32),
-            BackgroundColor3 = COLORS.Background,
-            BorderSizePixel = 0,
-            Text = name,
-            TextColor3 = COLORS.SubText,
-            TextSize = 11,
-            Font = FONT,
-            AutoButtonColor = false,
-            Parent = TabBar
-        })
-
-        local TabIndicator = Create("Frame", {
-            Position = UDim2.new(0, 0, 1, -2),
-            Size = UDim2.new(1, 0, 0, 2),
-            BackgroundColor3 = COLORS.Accent,
-            BorderSizePixel = 0,
-            Visible = false,
-            Parent = Button
-        })
-
-        --------------------------------------------------
-        -- TAB PAGE
-        --------------------------------------------------
-
-        local Page = Create("ScrollingFrame", {
-            Name = name .. "_Page",
-            Size = UDim2.new(1, 0, 1, 0),
-            BackgroundTransparency = 1,
-            BorderSizePixel = 0,
-            ScrollBarThickness = 3,
-            ScrollBarImageColor3 = COLORS.Accent,
-            CanvasSize = UDim2.new(0, 0, 0, 0),
-            Visible = false,
-            Parent = Content
-        })
-
-        Padding(Page, 7, 7, 7, 7)
-
-        local PageLayout = Create("UIListLayout", {
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 7),
-            Parent = Page
-        })
-
-        PageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-
-            Page.CanvasSize = UDim2.fromOffset(
-                0,
-                PageLayout.AbsoluteContentSize.Y + 14
-            )
-
-        end)
-
-        Tab.Button = Button
-        Tab.Page = Page
-        Tab.Layout = PageLayout
-
-        --------------------------------------------------
-        -- ACTIVATE
-        --------------------------------------------------
-
-        function Tab:Activate()
-
-            for _, other in pairs(Window.Tabs) do
-
-                other.Page.Visible = false
-                other.Button.TextColor3 = COLORS.SubText
-                other.Indicator.Visible = false
-
-            end
-
-            Page.Visible = true
-            Button.TextColor3 = COLORS.White
-            TabIndicator.Visible = true
-
-            Window.ActiveTab = Tab
-
+        local hw = (self.size - (self.hueN - 1) * 2) / self.hueN
+        for i = 1, self.hueN do
+            local o = self.hue[i]
+            o.Position = Vector2.new(self.hueX + (i - 1) * (hw + 2), self.hueY)
+            o.Size = Vector2.new(hw, self.hueH)
+            o.Color = Color3.fromHSV((i - 1) / (self.hueN - 1), 1, 1)
+            o.Visible = true
         end
-
-        Tab.Indicator = TabIndicator
-
-        --------------------------------------------------
-        -- CLICK
-        --------------------------------------------------
-
-        Button.MouseButton1Click:Connect(function()
-            Tab:Activate()
-        end)
-
-        --------------------------------------------------
-        -- SECTION
-        --------------------------------------------------
-
-        function Tab:CreateSection(sectionName)
-
-            local Section = {}
-
-            local Frame = Create("Frame", {
-                Name = sectionName,
-                Size = UDim2.new(1, 0, 0, 100),
-                BackgroundColor3 = COLORS.Main,
-                BorderSizePixel = 0,
-                Parent = Page
-            })
-
-            Stroke(Frame, COLORS.Border, 1)
-
-            local Header = Create("TextLabel", {
-                Position = UDim2.fromOffset(8, 5),
-                Size = UDim2.new(1, -16, 0, 18),
-                BackgroundTransparency = 1,
-                Text = sectionName,
-                TextColor3 = COLORS.White,
-                TextSize = 11,
-                Font = FONT,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = Frame
-            })
-
-            local Divider = Create("Frame", {
-                Position = UDim2.fromOffset(7, 26),
-                Size = UDim2.new(1, -14, 0, 1),
-                BackgroundColor3 = COLORS.BorderDark,
-                BorderSizePixel = 0,
-                Parent = Frame
-            })
-
-            local Elements = Create("Frame", {
-                Position = UDim2.fromOffset(7, 32),
-                Size = UDim2.new(1, -14, 0, 0),
-                BackgroundTransparency = 1,
-                Parent = Frame
-            })
-
-            local ElementLayout = Create("UIListLayout", {
-                SortOrder = Enum.SortOrder.LayoutOrder,
-                Padding = UDim.new(0, 4),
-                Parent = Elements
-            })
-
-            ElementLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-
-                local height = ElementLayout.AbsoluteContentSize.Y + 39
-
-                Frame.Size = UDim2.new(
-                    1,
-                    0,
-                    0,
-                    height
-                )
-
-            end)
-
-            Section.Frame = Frame
-            Section.Elements = Elements
-
-            --------------------------------------------------
-            -- LABEL
-            --------------------------------------------------
-
-            function Section:CreateLabel(text)
-
-                local Label = Create("TextLabel", {
-                    Size = UDim2.new(1, 0, 0, 22),
-                    BackgroundTransparency = 1,
-                    Text = text,
-                    TextColor3 = COLORS.SubText,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Parent = Elements
-                })
-
-                Padding(Label, 4, 4, 0, 0)
-
-                return Label
-
-            end
-
-            --------------------------------------------------
-            -- BUTTON
-            --------------------------------------------------
-
-            function Section:CreateButton(options)
-
-                options = options or {}
-
-                local Button = Create("TextButton", {
-                    Size = UDim2.new(1, 0, 0, 26),
-                    BackgroundColor3 = COLORS.Element,
-                    BorderSizePixel = 0,
-                    Text = options.Name or "Button",
-                    TextColor3 = COLORS.Text,
-                    TextSize = 10,
-                    Font = FONT,
-                    AutoButtonColor = false,
-                    Parent = Elements
-                })
-
-                Stroke(Button, COLORS.BorderDark, 1)
-
-                Button.MouseEnter:Connect(function()
-
-                    Tween(Button, {
-                        BackgroundColor3 = Color3.fromRGB(29, 29, 32)
-                    }):Play()
-
-                end)
-
-                Button.MouseLeave:Connect(function()
-
-                    Tween(Button, {
-                        BackgroundColor3 = COLORS.Element
-                    }):Play()
-
-                end)
-
-                Button.MouseButton1Click:Connect(function()
-
-                    if options.Callback then
-                        task.spawn(options.Callback)
-                    end
-
-                end)
-
-                return Button
-
-            end
-
-            --------------------------------------------------
-            -- TOGGLE
-            --------------------------------------------------
-
-            function Section:CreateToggle(options)
-
-                options = options or {}
-
-                local Value = options.Default or false
-
-                local Container = Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 26),
-                    BackgroundTransparency = 1,
-                    Parent = Elements
-                })
-
-                local Button = Create("TextButton", {
-                    Size = UDim2.new(1, 0, 1, 0),
-                    BackgroundTransparency = 1,
-                    Text = "",
-                    AutoButtonColor = false,
-                    Parent = Container
-                })
-
-                local Box = Create("Frame", {
-                    Position = UDim2.fromOffset(2, 5),
-                    Size = UDim2.fromOffset(15, 15),
-                    BackgroundColor3 = COLORS.Background,
-                    BorderSizePixel = 0,
-                    Parent = Container
-                })
-
-                Stroke(Box, COLORS.Border, 1)
-
-                local Check = Create("Frame", {
-                    Position = UDim2.fromOffset(3, 3),
-                    Size = UDim2.new(1, -6, 1, -6),
-                    BackgroundColor3 = COLORS.Accent,
-                    BorderSizePixel = 0,
-                    Visible = Value,
-                    Parent = Box
-                })
-
-                local Text = Create("TextLabel", {
-                    Position = UDim2.fromOffset(25, 0),
-                    Size = UDim2.new(1, -100, 1, 0),
-                    BackgroundTransparency = 1,
-                    Text = options.Name or "Toggle",
-                    TextColor3 = COLORS.Text,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Parent = Container
-                })
-
-                local KeyLabel = Create("TextLabel", {
-                    AnchorPoint = Vector2.new(1, 0),
-                    Position = UDim2.new(1, -4, 0, 5),
-                    Size = UDim2.fromOffset(55, 16),
-                    BackgroundTransparency = 1,
-                    Text = "",
-                    TextColor3 = COLORS.SubText,
-                    TextSize = 9,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Right,
-                    Parent = Container
-                })
-
-                local Toggle = {}
-
-                function Toggle:Set(value)
-
-                    Value = value == true
-
-                    Check.Visible = Value
-
-                    if options.Callback then
-                        task.spawn(options.Callback, Value)
-                    end
-
-                end
-
-                function Toggle:Get()
-                    return Value
-                end
-
-                Button.MouseButton1Click:Connect(function()
-                    Toggle:Set(not Value)
-                end)
-
-                --------------------------------------------------
-                -- TOGGLE KEYBIND
-                --------------------------------------------------
-
-                if options.Keybind then
-
-                    KeyLabel.Text = "[" .. options.Keybind.Name .. "]"
-
-                    UserInputService.InputBegan:Connect(function(input, processed)
-
-                        if processed then
-                            return
-                        end
-
-                        if input.KeyCode == options.Keybind then
-                            Toggle:Set(not Value)
-                        end
-
-                    end)
-
-                end
-
-                Toggle:Set(Value)
-
-                return Toggle
-
-            end
-
-            --------------------------------------------------
-            -- SLIDER
-            --------------------------------------------------
-
-            function Section:CreateSlider(options)
-
-                options = options or {}
-
-                local Minimum = options.Min or 0
-                local Maximum = options.Max or 100
-                local Value = Clamp(
-                    options.Default or Minimum,
-                    Minimum,
-                    Maximum
-                )
-
-                local Decimals = options.Decimals or 0
-
-                local Container = Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 42),
-                    BackgroundTransparency = 1,
-                    Parent = Elements
-                })
-
-                local Name = Create("TextLabel", {
-                    Position = UDim2.fromOffset(3, 0),
-                    Size = UDim2.new(0.6, 0, 0, 17),
-                    BackgroundTransparency = 1,
-                    Text = options.Name or "Slider",
-                    TextColor3 = COLORS.Text,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Parent = Container
-                })
-
-                local ValueLabel = Create("TextLabel", {
-                    AnchorPoint = Vector2.new(1, 0),
-                    Position = UDim2.new(1, -3, 0, 0),
-                    Size = UDim2.fromOffset(80, 17),
-                    BackgroundTransparency = 1,
-                    TextColor3 = COLORS.SubText,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Right,
-                    Parent = Container
-                })
-
-                local Bar = Create("Frame", {
-                    Position = UDim2.fromOffset(3, 21),
-                    Size = UDim2.new(1, -6, 0, 8),
-                    BackgroundColor3 = COLORS.Background,
-                    BorderSizePixel = 0,
-                    Parent = Container
-                })
-
-                Stroke(Bar, COLORS.BorderDark, 1)
-
-                local Fill = Create("Frame", {
-                    Size = UDim2.new(0, 0, 1, 0),
-                    BackgroundColor3 = COLORS.Accent,
-                    BorderSizePixel = 0,
-                    Parent = Bar
-                })
-
-                local Slider = {}
-                local Sliding = false
-
-                local function SetSlider(value)
-
-                    Value = Clamp(value, Minimum, Maximum)
-
-                    local percent =
-                        (Value - Minimum) /
-                        (Maximum - Minimum)
-
-                    Fill.Size = UDim2.new(
-                        percent,
-                        0,
-                        1,
-                        0
-                    )
-
-                    ValueLabel.Text = tostring(
-                        Round(Value, Decimals)
-                    )
-
-                    if options.Callback then
-                        task.spawn(
-                            options.Callback,
-                            Round(Value, Decimals)
-                        )
-                    end
-
-                end
-
-                Bar.InputBegan:Connect(function(input)
-
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-
-                        Sliding = true
-
-                        local percent =
-                            (input.Position.X - Bar.AbsolutePosition.X)
-                            / Bar.AbsoluteSize.X
-
-                        SetSlider(
-                            Minimum +
-                            (Maximum - Minimum) *
-                            Clamp(percent, 0, 1)
-                        )
-
-                    end
-
-                end)
-
-                UserInputService.InputChanged:Connect(function(input)
-
-                    if not Sliding then
-                        return
-                    end
-
-                    if input.UserInputType == Enum.UserInputType.MouseMovement then
-
-                        local percent =
-                            (input.Position.X - Bar.AbsolutePosition.X)
-                            / Bar.AbsoluteSize.X
-
-                        SetSlider(
-                            Minimum +
-                            (Maximum - Minimum) *
-                            Clamp(percent, 0, 1)
-                        )
-
-                    end
-
-                end)
-
-                UserInputService.InputEnded:Connect(function(input)
-
-                    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                        Sliding = false
-                    end
-
-                end)
-
-                function Slider:Set(value)
-                    SetSlider(value)
-                end
-
-                function Slider:Get()
-                    return Value
-                end
-
-                SetSlider(Value)
-
-                return Slider
-
-            end
-
-            --------------------------------------------------
-            -- DROPDOWN
-            --------------------------------------------------
-
-            function Section:CreateDropdown(options)
-
-                options = options or {}
-
-                local Options = options.Options or {}
-                local Current = options.Default or Options[1]
-
-                local Open = false
-
-                local Container = Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 28),
-                    BackgroundTransparency = 1,
-                    ClipsDescendants = false,
-                    Parent = Elements
-                })
-
-                local MainButton = Create("TextButton", {
-                    Size = UDim2.new(1, 0, 0, 26),
-                    BackgroundColor3 = COLORS.Element,
-                    BorderSizePixel = 0,
-                    Text = "",
-                    AutoButtonColor = false,
-                    Parent = Container
-                })
-
-                Stroke(MainButton, COLORS.BorderDark, 1)
-
-                local Name = Create("TextLabel", {
-                    Position = UDim2.fromOffset(7, 0),
-                    Size = UDim2.new(0.5, 0, 1, 0),
-                    BackgroundTransparency = 1,
-                    Text = options.Name or "Dropdown",
-                    TextColor3 = COLORS.Text,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Parent = MainButton
-                })
-
-                local CurrentLabel = Create("TextLabel", {
-                    AnchorPoint = Vector2.new(1, 0),
-                    Position = UDim2.new(1, -20, 0, 0),
-                    Size = UDim2.fromOffset(130, 26),
-                    BackgroundTransparency = 1,
-                    Text = tostring(Current or ""),
-                    TextColor3 = COLORS.SubText,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Right,
-                    Parent = MainButton
-                })
-
-                local Arrow = Create("TextLabel", {
-                    AnchorPoint = Vector2.new(1, 0),
-                    Position = UDim2.new(1, -5, 0, 0),
-                    Size = UDim2.fromOffset(12, 26),
-                    BackgroundTransparency = 1,
-                    Text = "+",
-                    TextColor3 = COLORS.SubText,
-                    TextSize = 11,
-                    Font = FONT,
-                    Parent = MainButton
-                })
-
-                local List = Create("Frame", {
-                    Position = UDim2.fromOffset(0, 29),
-                    Size = UDim2.new(1, 0, 0, 0),
-                    BackgroundColor3 = COLORS.Main,
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    ZIndex = 20,
-                    Parent = Container
-                })
-
-                Stroke(List, COLORS.Border, 1)
-
-                local ListLayout = Create("UIListLayout", {
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                    Parent = List
-                })
-
-                local Dropdown = {}
-
-                local function RefreshSize()
-
-                    local height =
-                        ListLayout.AbsoluteContentSize.Y
-
-                    List.Size = UDim2.new(
-                        1,
-                        0,
-                        0,
-                        height
-                    )
-
-                end
-
-                for _, option in ipairs(Options) do
-
-                    local OptionButton = Create("TextButton", {
-                        Size = UDim2.new(1, 0, 0, 24),
-                        BackgroundColor3 = COLORS.Main,
-                        BorderSizePixel = 0,
-                        Text = tostring(option),
-                        TextColor3 = COLORS.SubText,
-                        TextSize = 10,
-                        Font = FONT,
-                        AutoButtonColor = false,
-                        ZIndex = 21,
-                        Parent = List
-                    })
-
-                    OptionButton.MouseEnter:Connect(function()
-
-                        OptionButton.BackgroundColor3 =
-                            COLORS.Element
-
-                    end)
-
-                    OptionButton.MouseLeave:Connect(function()
-
-                        OptionButton.BackgroundColor3 =
-                            COLORS.Main
-
-                    end)
-
-                    OptionButton.MouseButton1Click:Connect(function()
-
-                        Current = option
-
-                        CurrentLabel.Text = tostring(option)
-
-                        if options.Callback then
-                            task.spawn(
-                                options.Callback,
-                                option
-                            )
-                        end
-
-                        Open = false
-                        List.Visible = false
-                        Arrow.Text = "+"
-
-                        Container.Size =
-                            UDim2.new(1, 0, 0, 28)
-
-                    end)
-
-                end
-
-                MainButton.MouseButton1Click:Connect(function()
-
-                    Open = not Open
-
-                    List.Visible = Open
-
-                    if Open then
-                        Arrow.Text = "-"
-                        RefreshSize()
-
-                        Container.Size = UDim2.new(
-                            1,
-                            0,
-                            0,
-                            28 + List.AbsoluteSize.Y
-                        )
-                    else
-                        Arrow.Text = "+"
-                        Container.Size =
-                            UDim2.new(1, 0, 0, 28)
-                    end
-
-                end)
-
-                function Dropdown:Set(value)
-
-                    for _, option in ipairs(Options) do
-
-                        if option == value then
-
-                            Current = value
-                            CurrentLabel.Text =
-                                tostring(value)
-
-                            if options.Callback then
-                                task.spawn(
-                                    options.Callback,
-                                    value
-                                )
-                            end
-
-                            break
-                        end
-
-                    end
-
-                end
-
-                function Dropdown:Get()
-                    return Current
-                end
-
-                return Dropdown
-
-            end
-
-            --------------------------------------------------
-            -- TEXTBOX
-            --------------------------------------------------
-
-            function Section:CreateTextbox(options)
-
-                options = options or {}
-
-                local Container = Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 27),
-                    BackgroundTransparency = 1,
-                    Parent = Elements
-                })
-
-                local Box = Create("TextBox", {
-                    Size = UDim2.new(1, 0, 1, 0),
-                    BackgroundColor3 = COLORS.Element,
-                    BorderSizePixel = 0,
-                    Text = options.Default or "",
-                    PlaceholderText = options.Placeholder or "Enter text...",
-                    PlaceholderColor3 = COLORS.Disabled,
-                    TextColor3 = COLORS.Text,
-                    TextSize = 10,
-                    Font = FONT,
-                    ClearTextOnFocus = false,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Parent = Container
-                })
-
-                Stroke(Box, COLORS.BorderDark, 1)
-
-                Padding(Box, 7, 7, 0, 0)
-
-                Box.FocusLost:Connect(function(enterPressed)
-
-                    if options.Callback then
-
-                        task.spawn(
-                            options.Callback,
-                            Box.Text,
-                            enterPressed
-                        )
-
-                    end
-
-                end)
-
-                return Box
-
-            end
-
-            --------------------------------------------------
-            -- KEYBIND
-            --------------------------------------------------
-
-            function Section:CreateKeybind(options)
-
-                options = options or {}
-
-                local CurrentKey =
-                    options.Default or Enum.KeyCode.Unknown
-
-                local Listening = false
-
-                local Container = Create("Frame", {
-                    Size = UDim2.new(1, 0, 0, 27),
-                    BackgroundTransparency = 1,
-                    Parent = Elements
-                })
-
-                local Name = Create("TextLabel", {
-                    Position = UDim2.fromOffset(3, 0),
-                    Size = UDim2.new(0.5, 0, 1, 0),
-                    BackgroundTransparency = 1,
-                    Text = options.Name or "Keybind",
-                    TextColor3 = COLORS.Text,
-                    TextSize = 10,
-                    Font = FONT,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    Parent = Container
-                })
-
-                local Button = Create("TextButton", {
-                    AnchorPoint = Vector2.new(1, 0),
-                    Position = UDim2.new(1, 0, 0, 0),
-                    Size = UDim2.fromOffset(90, 25),
-                    BackgroundColor3 = COLORS.Element,
-                    BorderSizePixel = 0,
-                    Text = CurrentKey.Name,
-                    TextColor3 = COLORS.SubText,
-                    TextSize = 9,
-                    Font = FONT,
-                    AutoButtonColor = false,
-                    Parent = Container
-                })
-
-                Stroke(Button, COLORS.BorderDark, 1)
-
-                local Keybind = {}
-
-                Button.MouseButton1Click:Connect(function()
-
-                    Listening = true
-                    Button.Text = "press key..."
-
-                end)
-
-                UserInputService.InputBegan:Connect(function(input, processed)
-
-                    if not Listening then
-                        return
-                    end
-
-                    if input.UserInputType == Enum.UserInputType.Keyboard then
-
-                        CurrentKey = input.KeyCode
-
-                        Button.Text = CurrentKey.Name
-
-                        Listening = false
-
-                        if options.Callback then
-                            task.spawn(
-                                options.Callback,
-                                CurrentKey
-                            )
-                        end
-
-                    end
-
-                end)
-
-                function Keybind:Set(key)
-
-                    CurrentKey = key
-                    Button.Text = key.Name
-
-                    if options.Callback then
-                        task.spawn(
-                            options.Callback,
-                            CurrentKey
-                        )
-                    end
-
-                end
-
-                function Keybind:Get()
-                    return CurrentKey
-                end
-
-                return Keybind
-
-            end
-
-            table.insert(Tab.Sections, Section)
-
-            return Section
-
-        end
-
-        table.insert(Window.Tabs, Tab)
-
-        if #Window.Tabs == 1 then
-            Tab:Activate()
-        end
-
-        return Tab
-
     end
 
-    --------------------------------------------------
-    -- TOGGLE WINDOW KEY
-    --------------------------------------------------
-
-    UserInputService.InputBegan:Connect(function(input, processed)
-
-        if processed then
-            return
+    function CP:Click(m)
+        local svRect = { x = self.svX, y = self.svY, w = self.size, h = self.size }
+        local hueRect = { x = self.hueX, y = self.hueY, w = self.size, h = self.hueH }
+        if contains(svRect, m) then
+            Library.Drag = { kind = "sv" }
+            self:Apply(m)
+            return true
         end
-
-        if input.KeyCode == Window.ToggleKey then
-            Window:Toggle()
+        if contains(hueRect, m) then
+            Library.Drag = { kind = "hue" }
+            self:Apply(m)
+            return true
         end
-
-    end)
-
-    --------------------------------------------------
-    -- CHANGE TOGGLE KEY
-    --------------------------------------------------
-
-    function Window:SetToggleKey(key)
-        Window.ToggleKey = key
+        return false
     end
 
-    --------------------------------------------------
-    -- GET GUI
-    --------------------------------------------------
-
-    function Window:GetGui()
-        return ScreenGui
-    end
-
-    --------------------------------------------------
-    -- DESTROY
-    --------------------------------------------------
-
-    function Window:Destroy()
-
-        if ScreenGui then
-            ScreenGui:Destroy()
+    function CP:Apply(m)
+        local p = self.open
+        if not p then return end
+        if Library.Drag and Library.Drag.kind == "hue" then
+            local t = math.clamp((m.X - self.hueX) / self.size, 0, 1)
+            p.H = t
+        elseif Library.Drag and Library.Drag.kind == "sv" then
+            local sx = math.clamp((m.X - self.svX) / self.size, 0, 1)
+            local sy = math.clamp((m.Y - self.svY) / self.size, 0, 1)
+            p.S = sx
+            p.V = 1 - sy
         end
-
-        Window.Tabs = {}
-        Window.Elements = {}
-
+        p.Color = Color3.fromHSV(p.H, p.S, p.V)
+        if p.Callback then p.Callback(p.Color, p.Alpha) end
     end
 
-    --------------------------------------------------
-    -- FOCUS
-    --------------------------------------------------
-
-    function Window:Focus()
-
-        Main.Visible = true
-        Window.Visible = true
-
-        Main.ZIndex = 100
-
+    function CP:Close()
+        if self.open then self.open:SetOpen(false) end
+        self.open = nil
+        Library.OpenOverlay = nil
     end
-
-    return Window
 end
 
+-- ---------------------------------------------------------------------
+--  ELEMENTS
+-- ---------------------------------------------------------------------
+local Element = {}
+Element.__index = Element
+
+local function newElement(section, kind, text, data)
+    local el = setmetatable({}, Element)
+    el.Section = section
+    el.Kind = kind
+    el.Text = text or ""
+    el.Height = 24
+    el.Value = data.Default
+    el.Callback = data.Callback
+    el.Flag = data.Flag or text
+    el.Hovered = false
+    el.Open = false
+    table.insert(section.Elements, el)
+    return el
+end
+
+-- Toggle
+function Element:SetToggleValue(v)
+    self.Value = v
+    if self.Callback then self.Callback(v) end
+end
+
+local function buildToggle(el)
+    el.Row = sq()
+    el.Label = txt(13)
+    el.Box = sq()
+    el.Knob = sq()
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Hovered and Theme.ElementHover or Theme.Element
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + (h - 13) / 2 - 1)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+        local bx = x + w - 30
+        local by = y + (h - 12) / 2
+        self.Box.Position = Vector2.new(bx, by)
+        self.Box.Size = Vector2.new(12, 12)
+        self.Box.Color = self.Value and Theme.Accent or Theme.Off
+        self.Box.Visible = true
+        self.Knob.Position = Vector2.new(bx + 3, by + 3)
+        self.Knob.Size = Vector2.new(6, 6)
+        self.Knob.Color = Theme.White or Color3.new(1, 1, 1)
+        self.Knob.Visible = self.Value
+    end
+    function el:Click(m, rect)
+        self:SetToggleValue(not self.Value)
+        return true
+    end
+end
+
+-- Button
+local function buildButton(el)
+    el.Row = sq()
+    el.Label = txt(13)
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Hovered and Theme.ElementHover or Theme.Element
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Center = true
+        self.Label.Position = Vector2.new(x + w / 2, y + (h - 13) / 2 - 1)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+    end
+    function el:Click(m, rect)
+        if self.Callback then self.Callback() end
+        return true
+    end
+end
+
+-- Label
+local function buildLabel(el)
+    el.Label = txt(13)
+    function el:Render(x, y, w)
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + (self.Height - 13) / 2 - 1)
+        self.Label.Color = Theme.SubText
+        self.Label.Visible = true
+    end
+    function el:Click() return false end
+end
+
+-- Divider
+local function buildDivider(el)
+    el.Line = sq()
+    function el:Render(x, y, w)
+        self.Line.Position = Vector2.new(x + 6, y + self.Height / 2)
+        self.Line.Size = Vector2.new(w - 12, 1)
+        self.Line.Color = Theme.Outline
+        self.Line.Visible = true
+    end
+    function el:Click() return false end
+end
+
+-- Slider
+local function buildSlider(el)
+    el.Row = sq()
+    el.Label = txt(12)
+    el.ValueText = txt(12)
+    el.Track = sq()
+    el.Fill = sq()
+    el.Handle = circle()
+    el.Min = el.Data.Min or 0
+    el.Max = el.Data.Max or 100
+    el.Decimals = el.Data.Decimals or el.Data.Rounding or 0
+    el.Suffix = el.Data.Suffix or ""
+    el.Height = 36
+    function el:SetSliderValue(v)
+        self.Value = math.clamp(v, self.Min, self.Max)
+        if self.Callback then self.Callback(self.Value) end
+    end
+    function el:Format(v)
+        if self.Decimals == 0 then return tostring(math.floor(v)) .. self.Suffix end
+        return string.format("%." .. self.Decimals .. "f", v) .. self.Suffix
+    end
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Hovered and Theme.ElementHover or Theme.Element
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + 4)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+        self.ValueText.Text = self:Format(self.Value or self.Min)
+        self.ValueText.Position = Vector2.new(x + w - 8 - self.ValueText.TextBounds.X, y + 4)
+        self.ValueText.Color = Theme.Accent
+        self.ValueText.Visible = true
+        local tx, tw = x + 8, w - 16
+        local ty = y + h - 12
+        self.Track.Position = Vector2.new(tx, ty)
+        self.Track.Size = Vector2.new(tw, 4)
+        self.Track.Color = Theme.Off
+        self.Track.Visible = true
+        local pct = (self.Value - self.Min) / math.max(self.Max - self.Min, 1e-6)
+        self.Fill.Position = Vector2.new(tx, ty)
+        self.Fill.Size = Vector2.new(tw * pct, 4)
+        self.Fill.Color = Theme.Accent
+        self.Fill.Visible = true
+        self.Handle.Position = Vector2.new(tx + tw * pct, ty + 2)
+        self.Handle.Radius = 6
+        self.Handle.Color = Theme.Handle
+        self.Handle.Visible = true
+        self._tx, self._tw, self._ty = tx, tw, ty
+    end
+    function el:Click(m, rect)
+        Library.Drag = { kind = "slider", el = self }
+        self:ApplyMouse(m)
+        return true
+    end
+    function el:ApplyMouse(m)
+        local pct = math.clamp((m.X - self._tx) / self._tw, 0, 1)
+        local raw = self.Min + pct * (self.Max - self.Min)
+        if self.Decimals == 0 then raw = math.floor(raw + 0.5) end
+        self:SetSliderValue(raw)
+    end
+end
+
+-- Dropdown
+local function buildDropdown(el)
+    el.Row = sq()
+    el.Label = txt(13)
+    el.ValueText = txt(12)
+    el.Arrow = txt(12)
+    el.Multi = el.Data.Multi == true
+    el.Items = el.Data.Items or el.Data.Values or {}
+    el.Height = 24
+    el.ListSquares = {}
+    el.ListTexts = {}
+    el._openRect = { x = 0, y = 0, w = 0, h = 0 }
+
+    if el.Multi then
+        el.Value = {}
+        for _, v in ipairs(el.Data.Default or {}) do el.Value[v] = true end
+    else
+        el.Value = el.Data.Default or el.Items[1]
+    end
+
+    for i = 1, #el.Items do
+        el.ListSquares[i] = sq()
+        el.ListTexts[i] = txt(12)
+    end
+    function el:ValueLabel()
+        if self.Multi then
+            local out = {}
+            for _, v in ipairs(self.Items) do
+                if self.Value[v] then table.insert(out, tostring(v)) end
+            end
+            return #out > 0 and table.concat(out, ", ") or "..."
+        end
+        return tostring(self.Value or "...")
+    end
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Hovered and Theme.ElementHover or Theme.Element
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + (h - 13) / 2 - 1)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+        self.ValueText.Text = self:ValueLabel()
+        self.ValueText.Center = false
+        self.ValueText.Position = Vector2.new(x + w - 22 - self.ValueText.TextBounds.X, y + (h - 12) / 2 - 1)
+        self.ValueText.Color = Theme.Accent
+        self.ValueText.Visible = true
+        self.Arrow.Text = self.Open and "^" or "v"
+        self.Arrow.Position = Vector2.new(x + w - 16, y + (h - 12) / 2 - 1)
+        self.Arrow.Color = Theme.SubText
+        self.Arrow.Visible = true
+
+        if self.Open then
+            local ih = 20
+            local ly = y + h + 2
+            self._openRect = { x = x + 4, y = ly, w = w - 8, h = ih * #self.Items + 6 }
+            local bg = self._listBg
+            if not bg then
+                bg = sq(); self._listBg = bg
+            end
+            bg.Position = Vector2.new(self._openRect.x, self._openRect.y)
+            bg.Size = Vector2.new(self._openRect.w, self._openRect.h)
+            bg.Color = Theme.SectionHead
+            bg.Visible = true
+            for i, item in ipairs(self.Items) do
+                local iy = ly + 3 + (i - 1) * ih
+                local sel = self.Multi and self.Value[item] or (self.Value == item)
+                local hovered = self._hoverIndex == i
+                local s = self.ListSquares[i]
+                s.Position = Vector2.new(x + 6, iy)
+                s.Size = Vector2.new(w - 12, ih)
+                s.Color = sel and Theme.Accent or (hovered and Theme.ElementHover or Theme.Element)
+                s.Visible = true
+                local t = self.ListTexts[i]
+                t.Text = tostring(item)
+                t.Center = false
+                t.Position = Vector2.new(x + 12, iy + (ih - 12) / 2 - 1)
+                t.Color = sel and Color3.fromRGB(20, 20, 24) or Theme.Text
+                t.Visible = true
+            end
+        else
+            if self._listBg then self._listBg.Visible = false end
+            for i = 1, #self.Items do
+                self.ListSquares[i].Visible = false
+                self.ListTexts[i].Visible = false
+            end
+        end
+    end
+    function el:SetOpen(v)
+        if v then
+            if Library.OpenOverlay and Library.OpenOverlay ~= self then Library.OpenOverlay:SetOpen(false) end
+            Library.OpenOverlay = self
+        elseif Library.OpenOverlay == self then
+            Library.OpenOverlay = nil
+        end
+        self.Open = v
+    end
+    function el:Select(item)
+        if self.Multi then
+            self.Value[item] = not self.Value[item]
+        else
+            self.Value = item
+            self:SetOpen(false)
+        end
+        if self.Callback then self.Callback(self.Multi and self.Value or item) end
+    end
+    function el:Click(m, rect)
+        self:SetOpen(not self.Open)
+        return true
+    end
+    function el:HandleOverlay(m, press)
+        local r = self._openRect
+        if not contains(r, m) then
+            self:SetOpen(false)
+            return false
+        end
+        local ih = 20
+        for i, item in ipairs(self.Items) do
+            local iy = r.y + 3 + (i - 1) * ih
+            if m.Y >= iy and m.Y <= iy + ih and m.X >= r.x and m.X <= r.x + r.w then
+                self._hoverIndex = i
+                if press then self:Select(item) end
+                return true
+            end
+        end
+        return true
+    end
+end
+
+-- Color Picker
+local function buildColorPicker(el)
+    el.Row = sq()
+    el.Label = txt(13)
+    el.Swatch = sq()
+    el.Height = 24
+    el.H = 0
+    el.S = 1
+    el.V = 1
+    el.Alpha = 1
+    if el.Data.Default then
+        el.H, el.S, el.V = el.Data.Default:ToHSV()
+        el.Color = el.Data.Default
+    else
+        el.Color = Color3.new(1, 1, 1)
+    end
+    el.OptionX = 0
+    el.OptionY = 0
+    el.OptionW = 0
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Hovered and Theme.ElementHover or Theme.Element
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + (h - 13) / 2 - 1)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+        self.Swatch.Position = Vector2.new(x + w - 30, y + (h - 14) / 2)
+        self.Swatch.Size = Vector2.new(22, 14)
+        self.Swatch.Color = self.Color
+        self.Swatch.Visible = true
+        self._absX, self._absY, self._absW = x, y, w
+    end
+    function el:SetOpen(v)
+        if v then
+            if Library.OpenOverlay and Library.OpenOverlay ~= self then Library.OpenOverlay:SetOpen(false) end
+            Library.OpenOverlay = self
+            CP.open = self
+            CP.size = 150
+            CP.svX = self._absX + self._absW - CP.size
+            CP.svY = self._absY + self.Height + 6
+            CP.hueX = CP.svX
+            CP.hueY = CP.svY + CP.size + 6
+            CP.hueW = CP.size
+        elseif Library.OpenOverlay == self then
+            Library.OpenOverlay = nil
+            CP.open = nil
+        end
+        self.Open = v
+    end
+    function el:Click(m, rect)
+        self:SetOpen(not self.Open)
+        return true
+    end
+end
+
+-- Keybind
+local function buildKeybind(el)
+    el.Row = sq()
+    el.Label = txt(13)
+    el.Key = txt(12)
+    el.Height = 24
+    el.Value = el.Data.Default or "None"
+    el.Capturing = false
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Hovered and Theme.ElementHover or Theme.Element
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + (h - 13) / 2 - 1)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+        self.Key.Text = self.Capturing and "[...]" or tostring(self.Value)
+        self.Key.Position = Vector2.new(x + w - 12 - self.Key.TextBounds.X, y + (h - 12) / 2 - 1)
+        self.Key.Color = self.Capturing and Theme.Accent or Theme.SubText
+        self.Key.Visible = true
+    end
+    function el:Click(m, rect)
+        for _, other in ipairs(self.Section.Elements) do
+            if other.Kind == "Keybind" and other ~= self then other.Capturing = false end
+        end
+        self.Capturing = true
+        Library.Capture = self
+        return true
+    end
+end
+
+-- Textbox
+local function buildTextbox(el)
+    el.Row = sq()
+    el.Label = txt(13)
+    el.ValueText = txt(12)
+    el.Height = 24
+    el.Value = el.Data.Default or ""
+    el.Focused = false
+    function el:Render(x, y, w)
+        local h = self.Height
+        self.Row.Position = Vector2.new(x, y)
+        self.Row.Size = Vector2.new(w, h)
+        self.Row.Color = self.Focused and Theme.ElementHover or (self.Hovered and Theme.ElementHover or Theme.Element)
+        self.Row.Visible = true
+        self.Label.Text = self.Text
+        self.Label.Position = Vector2.new(x + 8, y + (h - 13) / 2 - 1)
+        self.Label.Color = Theme.Text
+        self.Label.Visible = true
+        self.ValueText.Text = self.Value .. ((self.Focused and math.floor(tick() * 2) % 2 == 0) and "|" or "")
+        self.ValueText.Position = Vector2.new(x + w - 12 - self.ValueText.TextBounds.X, y + (h - 12) / 2 - 1)
+        self.ValueText.Color = Theme.Accent
+        self.ValueText.Visible = true
+    end
+    function el:Click(m, rect)
+        for _, other in ipairs(self.Section.Elements) do
+            if other.Kind == "Textbox" and other ~= self then other.Focused = false end
+        end
+        self.Focused = true
+        Library.Capture = self
+        return true
+    end
+end
+
+-- ---------------------------------------------------------------------
+--  SECTION / TAB / WINDOW
+-- ---------------------------------------------------------------------
+local Section = {}
+Section.__index = Section
+
+local BUILDERS = {
+    Toggle = buildToggle, Slider = buildSlider, Dropdown = buildDropdown,
+    ColorPicker = buildColorPicker, Button = buildButton, Label = buildLabel,
+    Keybind = buildKeybind, Textbox = buildTextbox, Divider = buildDivider,
+}
+
+function Section:Add(kind, text, data)
+    data = data or {}
+    local el = newElement(self, kind, text, data)
+    el.Data = data
+    local build = BUILDERS[kind]
+    if build then build(el) end
+    return el
+end
+
+function Section:AddToggle(t, d) return self:Add("Toggle", t, d) end
+function Section:AddSlider(t, d) return self:Add("Slider", t, d) end
+function Section:AddDropdown(t, d) return self:Add("Dropdown", t, d) end
+function Section:AddColorPicker(t, d) return self:Add("ColorPicker", t, d) end
+function Section:AddButton(t, d) return self:Add("Button", t, d) end
+function Section:AddLabel(t, d) return self:Add("Label", t, d) end
+function Section:AddKeybind(t, d) return self:Add("Keybind", t, d) end
+function Section:AddTextbox(t, d) return self:Add("Textbox", t, d) end
+function Section:AddDivider() return self:Add("Divider", "", {}) end
+
+local Tab = {}
+Tab.__index = Tab
+function Tab:AddSection(name)
+    local s = setmetatable({ Name = name, Elements = {}, Tab = self }, Section)
+    table.insert(self.Sections, s)
+    return s
+end
+
+local Win = {}
+Win.__index = Win
+
+function Win:AddTab(name)
+    local tab = setmetatable({ Name = name, Sections = {}, Window = self }, Tab)
+    table.insert(self.Tabs, tab)
+    return tab
+end
+
+function Win:Render()
+    local pos = self.Position
+    local w, h = self.Size.X, self.Size.Y
+    local topH, tabH = 32, 30
+    local contentTop = pos.Y + topH
+    local contentBottom = pos.Y + h - tabH
+    local contentH = contentBottom - contentTop
+
+    self.Bg.Position = pos
+    self.Bg.Size = self.Size
+    self.Bg.Color = Theme.Background
+    self.Bg.Visible = true
+
+    self.Topbar.Position = pos
+    self.Topbar.Size = Vector2.new(w, topH)
+    self.Topbar.Color = Theme.Topbar
+    self.Topbar.Visible = true
+
+    self.Title.Text = self.TitleText
+    self.Title.Position = Vector2.new(pos.X + 12, pos.Y + (topH - 14) / 2 - 1)
+    self.Title.Size = 14
+    self.Title.Color = Theme.Text
+    self.Title.Visible = true
+
+    self.ContentBg.Position = Vector2.new(pos.X, contentTop)
+    self.ContentBg.Size = Vector2.new(w, contentH)
+    self.ContentBg.Color = Theme.Content
+    self.ContentBg.Visible = true
+
+    self.Tabbar.Position = Vector2.new(pos.X, contentBottom)
+    self.Tabbar.Size = Vector2.new(w, tabH)
+    self.Tabbar.Color = Theme.Tabbar
+    self.Tabbar.Visible = true
+
+    self.Border.Position = pos
+    self.Border.Size = self.Size
+    self.Border.Color = Theme.Outline
+    self.Border.Filled = false
+    self.Border.Visible = true
+
+    -- tabs
+    local count = #self.Tabs
+    local tw = w / math.max(count, 1)
+    for i, tab in ipairs(self.Tabs) do
+        local tx = pos.X + (i - 1) * tw
+        local text = tab.TextDrawings
+        if not text then
+            text = txt(13)
+            tab.TextDrawings = text
+        end
+        text.Text = tab.Name
+        text.Center = true
+        text.Position = Vector2.new(tx + tw / 2, contentBottom + (tabH - 13) / 2 - 1)
+        text.Color = (self.ActiveTab == i) and Theme.Text or Theme.SubText
+        text.Visible = true
+
+        if not tab.Underline then tab.Underline = sq() end
+        local ul = tab.Underline
+        ul.Position = Vector2.new(tx + tw * 0.25, contentBottom + tabH - 3)
+        ul.Size = Vector2.new(tw * 0.5, 2)
+        ul.Color = Theme.Accent
+        ul.Visible = self.ActiveTab == i
+    end
+
+    -- active tab content
+    local active = self.Tabs[self.ActiveTab]
+    if not active then return end
+
+    local pad = 10
+    local secW = w - pad * 2
+    local y = contentTop + pad - self.Scroll
+
+    -- layout & render sections
+    for _, sec in ipairs(active.Sections) do
+        local headH = 24
+        sec._absX = pos.X + pad
+        sec._absY = y
+        sec._headH = headH
+        -- measure
+        local inner = 4
+        local total = headH + inner
+        for _, el in ipairs(sec.Elements) do
+            total = total + el.Height + 2
+        end
+        total = total + 4
+        sec._height = total
+
+        local visible = not (y + sec._height < contentTop or y > contentBottom)
+        sec._visible = visible
+
+        if visible then
+            if not sec.Bg then sec.Bg = sq() end
+            if not sec.Head then sec.Head = sq() end
+            if not sec.HeadText then sec.HeadText = txt(13) end
+            sec.Bg.Position = Vector2.new(sec._absX, y)
+            sec.Bg.Size = Vector2.new(secW, sec._height)
+            sec.Bg.Color = Theme.Section
+            sec.Bg.Visible = true
+            sec.Head.Position = Vector2.new(sec._absX, y)
+            sec.Head.Size = Vector2.new(secW, headH)
+            sec.Head.Color = Theme.SectionHead
+            sec.Head.Visible = true
+            sec.HeadText.Text = sec.Name
+            sec.HeadText.Position = Vector2.new(sec._absX + 10, y + (headH - 13) / 2 - 1)
+            sec.HeadText.Color = Theme.Text
+            sec.HeadText.Visible = true
+        else
+            if sec.Bg then sec.Bg.Visible = false end
+            if sec.Head then sec.Head.Visible = false end
+            if sec.HeadText then sec.HeadText.Visible = false end
+        end
+
+        local ey = y + headH + 2
+        for _, el in ipairs(sec.Elements) do
+            local rect = { x = sec._absX + 4, y = ey, w = secW - 8, h = el.Height }
+            el._rect = rect
+            local elVisible = visible and not (ey + el.Height < contentTop or ey > contentBottom)
+            if elVisible then
+                el:Render(rect.x, ey, rect.w)
+            else
+                el:Hide()
+            end
+            ey = ey + el.Height + 2
+        end
+        y = y + sec._height + 8
+    end
+
+    -- total content height for scrolling
+    local totalH = (y + self.Scroll) - (contentTop + pad)
+    self._maxScroll = math.max(0, totalH - (contentH - pad * 2))
+end
+
+function Element:Hide()
+    for _, v in pairs(self) do
+        if type(v) == "userdata" then
+            pcall(function() v.Visible = false end)
+        end
+    end
+    if self.Box then self.Box.Visible = false end
+    if self.Knob then self.Knob.Visible = false end
+    if self.Fill then self.Fill.Visible = false end
+    if self.Handle then self.Handle.Visible = false end
+    if self.Track then self.Track.Visible = false end
+    if self.Swatch then self.Swatch.Visible = false end
+    if self.ValueText then self.ValueText.Visible = false end
+    if self.Arrow then self.Arrow.Visible = false end
+    if self.Label then self.Label.Visible = false end
+    if self.Row then self.Row.Visible = false end
+    if self.ListSquares then for _, o in ipairs(self.ListSquares) do o.Visible = false end end
+    if self.ListTexts then for _, o in ipairs(self.ListTexts) do o.Visible = false end end
+    if self._listBg then self._listBg.Visible = false end
+end
+
+function Win:UpdateInput()
+    local m = UserInputService:GetMouseLocation()
+    local pos = self.Position
+    local w, h = self.Size.X, self.Size.Y
+    local topH, tabH = 32, 30
+    local contentTop = pos.Y + topH
+    local contentBottom = pos.Y + h - tabH
+
+    -- hover pass
+    local active = self.Tabs[self.ActiveTab]
+    if active then
+        for _, sec in ipairs(active.Sections) do
+            if sec._visible then
+                for _, el in ipairs(sec.Elements) do
+                    local r = el._rect
+                    el.Hovered = r and contains(r, m)
+                end
+            end
+        end
+    end
+
+    -- colorpicker global
+    CP:Render()
+
+    self._drag = Library.Drag
+    if Library.Drag and Library.Drag.kind == "window" then
+        self.Position = m - Library.Drag.off
+    elseif Library.Drag and Library.Drag.kind == "slider" then
+        Library.Drag.el:ApplyMouse(m)
+    elseif Library.Drag and (Library.Drag.kind == "sv" or Library.Drag.kind == "hue") then
+        CP:Apply(m)
+    end
+end
+
+-- ---------------------------------------------------------------------
+--  INPUT
+-- ---------------------------------------------------------------------
+local function windowAt(m)
+    for _, win in ipairs(Library.Windows) do
+        if contains({ x = win.Position.X, y = win.Position.Y, w = win.Size.X, h = win.Size.Y }, m) then
+            return win
+        end
+    end
+    return nil
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+        if Library.Capture and input.UserInputType == Enum.UserInputType.Keyboard then
+            local cap = Library.Capture
+            if cap.Kind == "Keybind" then
+                local key = input.KeyCode.Name
+                cap.Value = (key == "Unknown" and "None") or key
+                cap.Capturing = false
+                if cap.Callback then cap.Callback(cap.Value) end
+                Library.Capture = nil
+            elseif cap.Kind == "Textbox" then
+                local key = input.KeyCode
+                if key == Enum.KeyCode.Backspace then
+                    cap.Value = cap.Value:sub(1, -2)
+                elseif key == Enum.KeyCode.Return or key == Enum.KeyCode.Escape then
+                    cap.Focused = false
+                    Library.Capture = nil
+                    if cap.Callback then cap.Callback(cap.Value) end
+                else
+                    local ch = UserInputService:GetStringForKeyCode(key)
+                    if ch and #ch == 1 then cap.Value = cap.Value .. ch end
+                end
+            end
+        end
+        return
+    end
+    if processed then return end
+    local m = UserInputService:GetMouseLocation()
+
+    if Library.OpenOverlay then
+        local overlay = Library.OpenOverlay
+        if overlay.Kind == "ColorPicker" then
+            if CP:Click(m) then return end
+            overlay:SetOpen(false)
+            return
+        elseif overlay.Kind == "Dropdown" then
+            if overlay:HandleOverlay(m, true) then return end
+            return
+        end
+    end
+
+    local win = windowAt(m)
+    if not win then return end
+
+    local pos = win.Position
+    local w, h = win.Size.X, win.Size.Y
+    local topH, tabH = 32, 30
+    local contentBottom = pos.Y + h - tabH
+    local contentTop = pos.Y + topH
+
+    if m.Y <= pos.Y + topH then
+        Library.Drag = { kind = "window", off = m - pos }
+        return
+    end
+
+    if m.Y >= contentBottom then
+        local count = #win.Tabs
+        local tw = w / math.max(count, 1)
+        for i = 1, count do
+            local tx = pos.X + (i - 1) * tw
+            if m.X >= tx and m.X <= tx + tw then
+                win.ActiveTab = i
+                win.Scroll = 0
+                break
+            end
+        end
+        return
+    end
+
+    local active = win.Tabs[win.ActiveTab]
+    if not active then return end
+    for i = #active.Sections, 1, -1 do
+        local sec = active.Sections[i]
+        if sec._visible then
+            for j = #sec.Elements, 1, -1 do
+                local el = sec.Elements[j]
+                if el._rect and contains(el._rect, m) then
+                    if el:Click(m, el._rect) then return end
+                end
+            end
+        end
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseWheel then
+        local win = Library.Windows[1]
+        if win then
+            win.Scroll = math.clamp(win.Scroll - input.Position.Z * 24, 0, win._maxScroll or 0)
+        end
+        return
+    end
+    if Library.Drag and Library.Drag.kind == "window" then
+        local win = windowAt(winpos or Vector2.new())
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        Library.Drag = nil
+    end
+end)
+
+-- ---------------------------------------------------------------------
+--  LIBRARY API
+-- ---------------------------------------------------------------------
+function Library:CreateWindow(cfg)
+    cfg = cfg or {}
+    local self = setmetatable({
+        Tabs = {},
+        Position = cfg.Position or Vector2.new(200, 160),
+        Size = cfg.Size or Vector2.new(620, 420),
+        TitleText = cfg.Title or "Drawing UI",
+        ActiveTab = 1,
+        Scroll = 0,
+    }, Win)
+
+    self.Bg = sq()
+    self.Topbar = sq()
+    self.ContentBg = sq()
+    self.Tabbar = sq()
+    self.Border = sq()
+    self.Border.Filled = false
+    self.Border.Thickness = 1
+    self.Title = txt(14)
+
+    table.insert(Library.Windows, self)
+
+    RunService.RenderStepped:Connect(function()
+        self:UpdateInput()
+        self:Render()
+    end)
+
+    return self
+end
+
+getgenv().DrawingUI = Library
 return Library

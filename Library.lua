@@ -2498,7 +2498,7 @@ local Library do
                     AnchorPoint = Vector2New(0, 1),
                     Position = UDim2New(0, 0, 1, 0),
                     BorderColor3 = FromRGB(0, 0, 0),
-                    Size = UDim2New(1, 0, 0, 25),
+                    Size = UDim2New(1, 0, 0, 46),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(20, 20, 20)
                 })
@@ -2680,7 +2680,7 @@ local Library do
                     BackgroundTransparency = 1,
                     Position = UDim2New(0, 0, 0, 46),
                     BorderColor3 = FromRGB(0, 0, 0),
-                    Size = UDim2New(0, 148, 1, -71),
+                    Size = UDim2New(0, 148, 1, -92),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(255, 255, 255)
                 })
@@ -2799,7 +2799,7 @@ local Library do
                     Text = "",
                     AutoButtonColor = false,
                     BackgroundTransparency = 1,
-                    Size = UDim2New(0, 20, 0, 20),
+                    Size = UDim2New(0, 32, 0, 32),
                     BorderSizePixel = 0,
                     TextSize = 14,
                     BackgroundColor3 = FromRGB(255, 255, 255)
@@ -2826,7 +2826,7 @@ local Library do
                     BackgroundTransparency = 1,
                     Position = UDim2New(0, 149, 0, 45),
                     BorderColor3 = FromRGB(0, 0, 0),
-                    Size = UDim2New(1, -149, 1, -70),
+                    Size = UDim2New(1, -149, 1, -91),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(255, 255, 255)
                 })

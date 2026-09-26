@@ -1,3 +1,4 @@
+```
 -- made by samet september 14 2025
 -- example at bottom
 
@@ -7,7 +8,7 @@ if getgenv().Library then
     getgenv().Library:Unload()
 end
 
-local Library do 
+Library do 
     local Workspace = game:GetService("Workspace")
     local UserInputService = game:GetService("UserInputService")
     local Players = game:GetService("Players")
@@ -2464,7 +2465,8 @@ local Library do
 
             local Window = {
                 Logo = Data.Logo or Data.logo or "rbxassetid://90459883253339",
-
+                Build = Data.Build or Data.build or "live",
+                
                 Pages = { },
                 Items = { },
                 IsOpen = false
@@ -2481,7 +2483,7 @@ local Library do
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(20, 20, 20)
                 })
-
+                
                 Items["MainFrame"]:MakeDraggable()
                 Items["MainFrame"]:MakeResizeable(Vector2New(786, 481), Vector2New(9999, 9999))
 
@@ -2490,33 +2492,24 @@ local Library do
                     Name = "\0",
                     CornerRadius = UDimNew(0, 4)
                 })
-
-                Instances:Create("UIStroke", {
-                    Parent = Items["MainFrame"].Instance,
-                    Name = "\0",
-                    Color = FromRGB(35, 35, 35),
-                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                })
-
-                -- Bottom navigation/header. The old top header and build text are removed.
+                
                 Items["Bottom"] = Instances:Create("Frame", {
                     Parent = Items["MainFrame"].Instance,
                     Name = "\0",
                     AnchorPoint = Vector2New(0, 1),
                     Position = UDim2New(0, 0, 1, 0),
                     BorderColor3 = FromRGB(0, 0, 0),
-                    Size = UDim2New(1, 0, 0, 46),
+                    Size = UDim2New(1, 0, 0, 25),
                     BorderSizePixel = 0,
-                    BackgroundColor3 = FromRGB(26, 26, 26)
+                    BackgroundColor3 = FromRGB(20, 20, 20)
                 })
-
+                
                 Instances:Create("UICorner", {
                     Parent = Items["Bottom"].Instance,
                     Name = "\0",
                     CornerRadius = UDimNew(0, 4)
                 })
-
-                -- Header divider at the top of the bottom bar.
+                
                 Instances:Create("Frame", {
                     Parent = Items["Bottom"].Instance,
                     Name = "\0",
@@ -2525,26 +2518,104 @@ local Library do
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(20, 20, 20)
                 })
-
+                
+                Instances:Create("Frame", {
+                    Parent = Items["Bottom"].Instance,
+                    Name = "\0",
+                    BorderColor3 = FromRGB(0, 0, 0),
+                    Size = UDim2New(1, 0, 0, 1),
+                    BorderSizePixel = 0,
+                    BackgroundColor3 = FromRGB(35, 35, 35)
+                })
+                
                 Items["BottomShadow"] = Instances:Create("Frame", {
                     Parent = Items["Bottom"].Instance,
                     Name = "\0",
+                    AnchorPoint = Vector2New(0, 1),
                     Position = UDim2New(0, 0, 0, 1),
                     BorderColor3 = FromRGB(0, 0, 0),
                     Size = UDim2New(1, 0, 0, 15),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(0, 0, 0)
                 })
-
+                
                 Instances:Create("UIGradient", {
                     Parent = Items["BottomShadow"].Instance,
                     Name = "\0",
                     Rotation = -90,
                     Transparency = NumSequence{NumSequenceKeypoint(0, 1), NumSequenceKeypoint(0.025, 0.800000011920929), NumSequenceKeypoint(0.106, 0.7250000238418579), NumSequenceKeypoint(0.22, 0.8500000238418579), NumSequenceKeypoint(1, 1)}
                 })
-
-                Items["Logo"] = Instances:Create("ImageLabel", {
+                
+                Items["BuildText"] = Instances:Create("TextLabel", {
                     Parent = Items["Bottom"].Instance,
+                    Name = "\0",
+                    FontFace = Library.Font,
+                    RichText = true,
+                    TextColor3 = FromRGB(74, 74, 74),
+                    BorderColor3 = FromRGB(0, 0, 0),
+                    Text = "build: "..Window.Build,
+                    Size = UDim2New(0, 0, 0, 15),
+                    AnchorPoint = Vector2New(0, 0.5),
+                    BorderSizePixel = 0,
+                    BackgroundTransparency = 1,
+                    Position = UDim2New(0, 8, 0.5, 0),
+                    AutomaticSize = Enum.AutomaticSize.X,
+                    TextSize = 14,
+                    BackgroundColor3 = FromRGB(255, 255, 255)
+                })
+                
+                Instances:Create("UIStroke", {
+                    Parent = Items["MainFrame"].Instance,
+                    Name = "\0",
+                    Color = FromRGB(35, 35, 35),
+                    ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                })
+                
+                Items["Top"] = Instances:Create("Frame", {
+                    Parent = Items["MainFrame"].Instance,
+                    Name = "\0",
+                    BorderColor3 = FromRGB(0, 0, 0),
+                    Size = UDim2New(1, 0, 0, 46),
+                    BorderSizePixel = 0,
+                    BackgroundColor3 = FromRGB(26, 26, 26)
+                })
+                
+                Instances:Create("UICorner", {
+                    Parent = Items["Top"].Instance,
+                    Name = "\0",
+                    CornerRadius = UDimNew(0, 4)
+                })
+                
+                Instances:Create("Frame", {
+                    Parent = Items["Top"].Instance,
+                    Name = "\0",
+                    AnchorPoint = Vector2New(0, 1),
+                    Position = UDim2New(0, 0, 1, 0),
+                    BorderColor3 = FromRGB(0, 0, 0),
+                    Size = UDim2New(1, 0, 0, 2),
+                    BorderSizePixel = 0,
+                    BackgroundColor3 = FromRGB(20, 20, 20)
+                })
+                
+                Items["TopShadow"] = Instances:Create("Frame", {
+                    Parent = Items["Top"].Instance,
+                    Name = "\0",
+                    Position = UDim2New(0, 0, 1, -1),
+                    BorderColor3 = FromRGB(0, 0, 0),
+                    Size = UDim2New(1, 0, 0, 15),
+                    BorderSizePixel = 0,
+                    BackgroundColor3 = FromRGB(0, 0, 0)
+                })
+                
+                Instances:Create("UIGradient", {
+                    Parent = Items["TopShadow"].Instance,
+                    Name = "\0",
+                    Rotation = 90,
+                    Transparency = NumSequence{NumSequenceKeypoint(0, 1), NumSequenceKeypoint(0.025, 0.800000011920929), NumSequenceKeypoint(0.106, 0.7250000238418579), NumSequenceKeypoint(0.22, 0.8500000238418579), NumSequenceKeypoint(1, 1)}
+                })
+                
+                Items["Logo"] = Instances:Create("ImageLabel", {
+                    Parent = Items["Top"].Instance,
                     Name = "\0",
                     ImageColor3 = FromRGB(166, 147, 243),
                     ScaleType = Enum.ScaleType.Fit,
@@ -2552,72 +2623,69 @@ local Library do
                     AnchorPoint = Vector2New(0, 0.5),
                     Image = Window.Logo,
                     BackgroundTransparency = 1,
-                    Position = UDim2New(0, 8, 0.5, 0),
-                    Size = UDim2New(0, 30, 0, 30),
+                    Position = UDim2New(0, 6, 0.5, 0),
+                    Size = UDim2New(0, 32, 0, 32),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(255, 255, 255)
                 })  Items["Logo"]:AddToTheme({ImageColor3 = "Accent"})
-
+                
                 Items["Liner"] = Instances:Create("Frame", {
-                    Parent = Items["Bottom"].Instance,
+                    Parent = Items["Top"].Instance,
                     Name = "\0",
-                    AnchorPoint = Vector2New(0, 0),
-                    Position = UDim2New(0, 0, 0, 1),
+                    AnchorPoint = Vector2New(0, 1),
+                    Position = UDim2New(0, 0, 1, -1),
                     BorderColor3 = FromRGB(0, 0, 0),
                     Size = UDim2New(1, 0, 0, 1),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(166, 147, 243)
                 })  Items["Liner"]:AddToTheme({BackgroundColor3 = "Accent"})
-
+                
                 Instances:Create("UIGradient", {
                     Parent = Items["Liner"].Instance,
                     Name = "\0",
                     Transparency = NumSequence{NumSequenceKeypoint(0, 1), NumSequenceKeypoint(0.41, 1), NumSequenceKeypoint(1, 0)}
                 })
-
-                -- Tabs are centered in the bottom header.
+                
                 Items["SubPages"] = Instances:Create("Frame", {
-                    Parent = Items["Bottom"].Instance,
+                    Parent = Items["Top"].Instance,
                     Name = "\0",
                     BorderColor3 = FromRGB(0, 0, 0),
-                    AnchorPoint = Vector2New(0.5, 0),
+                    AnchorPoint = Vector2New(1, 0),
                     BackgroundTransparency = 1,
-                    Position = UDim2New(0.5, 0, 0, 0),
+                    Position = UDim2New(1, 0, 0, 0),
                     Size = UDim2New(0, 0, 1, 0),
                     BorderSizePixel = 0,
                     AutomaticSize = Enum.AutomaticSize.X,
                     BackgroundColor3 = FromRGB(255, 255, 255)
                 })
-
+                
                 Instances:Create("UIPadding", {
                     Parent = Items["SubPages"].Instance,
                     Name = "\0",
                     PaddingRight = UDimNew(0, 12),
                     PaddingLeft = UDimNew(0, 12)
                 })
-
+                
                 Instances:Create("UIListLayout", {
                     Parent = Items["SubPages"].Instance,
                     Name = "\0",
                     VerticalAlignment = Enum.VerticalAlignment.Center,
-                    HorizontalAlignment = Enum.HorizontalAlignment.Center,
                     FillDirection = Enum.FillDirection.Horizontal,
                     Padding = UDimNew(0, 20),
                     SortOrder = Enum.SortOrder.LayoutOrder
-                })
+                })                
 
-                -- Content now fills the space above the bottom header.
                 Items["Side"] = Instances:Create("Frame", {
                     Parent = Items["MainFrame"].Instance,
                     Name = "\0",
                     BackgroundTransparency = 1,
-                    Position = UDim2New(0, 0, 0, 0),
+                    Position = UDim2New(0, 0, 0, 46),
                     BorderColor3 = FromRGB(0, 0, 0),
-                    Size = UDim2New(0, 148, 1, -46),
+                    Size = UDim2New(0, 148, 1, -71),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(255, 255, 255)
                 })
-
+                
                 Items["PageHolder"] = Instances:Create("Frame", {
                     Parent = Items["Side"].Instance,
                     Name = "\0",
@@ -2638,10 +2706,9 @@ local Library do
                     Size = UDim2New(0, 1, 1, 0),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(35, 35, 35)
-                })
+                })                
 
                 Window.Items = Items
-            end
             end
             
             local Debounce = false
@@ -2758,9 +2825,9 @@ local Library do
                     Name = "\0",
                     Visible = false,
                     BackgroundTransparency = 1,
-                    Position = UDim2New(0, 149, 0, 0),
+                    Position = UDim2New(0, 149, 0, 45),
                     BorderColor3 = FromRGB(0, 0, 0),
-                    Size = UDim2New(1, -149, 1, -46),
+                    Size = UDim2New(1, -149, 1, -70),
                     BorderSizePixel = 0,
                     BackgroundColor3 = FromRGB(255, 255, 255)
                 })

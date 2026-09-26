@@ -78,10 +78,10 @@ local Library do
         FadeSpeed = 0.4,
 
         Folders = {
-            Directory = "Pandora",
-            Configs = "Pandora/Configs",
-            Assets = "Pandora/Images",
-            Fonts = "Pandora/Fonts"
+            Directory = "Tide",
+            Configs = "Tide/Configs",
+            Assets = "Tide/Images",
+            Fonts = "Tide/Fonts"
         },
 
         Images = {
@@ -197,8 +197,8 @@ local Library do
 
     local Themes = {
         ["Preset"] = {
-            ["Accent"] = FromRGB(166, 147, 243),
-            ["Dark Accent"] = FromRGB(110, 97, 161)
+            ["Accent"] = FromRGB(102, 178, 255),
+            ["Dark Accent"] = FromRGB(60, 120, 200)
         }
     }
 

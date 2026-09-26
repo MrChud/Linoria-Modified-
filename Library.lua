@@ -1,4 +1,3 @@
-```
 -- made by samet september 14 2025
 -- example at bottom
 
@@ -8,7 +7,7 @@ if getgenv().Library then
     getgenv().Library:Unload()
 end
 
-Library do 
+local Library do 
     local Workspace = game:GetService("Workspace")
     local UserInputService = game:GetService("UserInputService")
     local Players = game:GetService("Players")
@@ -2555,10 +2554,10 @@ Library do
                     BorderColor3 = FromRGB(0, 0, 0),
                     Text = "build: "..Window.Build,
                     Size = UDim2New(0, 0, 0, 15),
-                    AnchorPoint = Vector2New(0, 0.5),
+                    AnchorPoint = Vector2New(1, 0.5),
                     BorderSizePixel = 0,
                     BackgroundTransparency = 1,
-                    Position = UDim2New(0, 8, 0.5, 0),
+                    Position = UDim2New(1, -8, 0.5, 0),
                     AutomaticSize = Enum.AutomaticSize.X,
                     TextSize = 14,
                     BackgroundColor3 = FromRGB(255, 255, 255)
@@ -2647,12 +2646,12 @@ Library do
                 })
                 
                 Items["SubPages"] = Instances:Create("Frame", {
-                    Parent = Items["Top"].Instance,
+                    Parent = Items["Bottom"].Instance,
                     Name = "\0",
                     BorderColor3 = FromRGB(0, 0, 0),
-                    AnchorPoint = Vector2New(1, 0),
+                    AnchorPoint = Vector2New(0.5, 0),
                     BackgroundTransparency = 1,
-                    Position = UDim2New(1, 0, 0, 0),
+                    Position = UDim2New(0.5, 0, 0, 0),
                     Size = UDim2New(0, 0, 1, 0),
                     BorderSizePixel = 0,
                     AutomaticSize = Enum.AutomaticSize.X,

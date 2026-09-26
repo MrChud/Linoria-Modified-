@@ -2554,10 +2554,10 @@ local Library do
                     BorderColor3 = FromRGB(0, 0, 0),
                     Text = "build: "..Window.Build,
                     Size = UDim2New(0, 0, 0, 15),
-                    AnchorPoint = Vector2New(1, 0.5),
+                    AnchorPoint = Vector2New(0, 0.5),
                     BorderSizePixel = 0,
                     BackgroundTransparency = 1,
-                    Position = UDim2New(1, -8, 0.5, 0),
+                    Position = UDim2New(0, 8, 0.5, 0),
                     AutomaticSize = Enum.AutomaticSize.X,
                     TextSize = 14,
                     BackgroundColor3 = FromRGB(255, 255, 255)
@@ -2799,7 +2799,7 @@ local Library do
                     Text = "",
                     AutoButtonColor = false,
                     BackgroundTransparency = 1,
-                    Size = UDim2New(0, 32, 0, 32),
+                    Size = UDim2New(0, 24, 0, 24),
                     BorderSizePixel = 0,
                     TextSize = 14,
                     BackgroundColor3 = FromRGB(255, 255, 255)

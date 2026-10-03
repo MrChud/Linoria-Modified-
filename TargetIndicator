@@ -1,0 +1,159 @@
+local TargetIndicator = {}
+TargetIndicator.Visible = false
+TargetIndicator.Target = nil
+
+local PlayersService = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local HeadshotCache = {}
+
+local function GetHeadshot(player)
+    if HeadshotCache[player.UserId] then
+        return HeadshotCache[player.UserId]
+    end
+    local url = "https://www.roblox.com/headshot-thumbnail/image?userId="
+        .. tostring(player.UserId) .. "&width=150&height=150&format=png"
+    local ok, data = pcall(game.HttpGet, game, url)
+    if not ok or not data or #data < 100 then
+        return nil
+    end
+    local ok2, asset = pcall(getcustomasset, data)
+    if not ok2 then
+        return nil
+    end
+    HeadshotCache[player.UserId] = asset
+    return asset
+end
+
+local Card = {
+    Width = 150,
+    Height = 44,
+    Offset = Vector2.new(30, -22),
+    Background = Color3.fromRGB(20, 20, 22),
+    BackgroundTransparency = 0.15,
+    Outline = Color3.fromRGB(45, 45, 50),
+    NameColor = Color3.fromRGB(255, 255, 255),
+    DistanceColor = Color3.fromRGB(255, 255, 255),
+}
+
+local Draw = {
+    Bg = Drawing.new("Square"),
+    Outline = Drawing.new("Square"),
+    Image = Drawing.new("Image"),
+    Name = Drawing.new("Text"),
+    HealthBar = Drawing.new("Square"),
+    HealthFill = Drawing.new("Square"),
+    Distance = Drawing.new("Text"),
+}
+
+Draw.Bg.Filled = true
+Draw.Bg.Color = Card.Background
+Draw.Bg.Transparency = Card.BackgroundTransparency
+Draw.Outline.Filled = false
+Draw.Outline.Thickness = 1
+Draw.Outline.Color = Card.Outline
+Draw.Name.Size = 13
+Draw.Name.Center = false
+Draw.Name.Outline = true
+Draw.Name.OutlineColor = Color3.new(0, 0, 0)
+Draw.Name.Color = Card.NameColor
+Draw.HealthBar.Filled = true
+Draw.HealthBar.Color = Color3.new(0, 0, 0)
+Draw.HealthFill.Filled = true
+Draw.HealthFill.Color = Color3.fromRGB(0, 255, 0)
+Draw.Distance.Size = 13
+Draw.Distance.Center = false
+Draw.Distance.Outline = true
+Draw.Distance.OutlineColor = Color3.new(0, 0, 0)
+Draw.Distance.Color = Card.DistanceColor
+
+local lastImage = nil
+
+local function Hide()
+    Draw.Bg.Visible = false
+    Draw.Outline.Visible = false
+    Draw.Image.Visible = false
+    Draw.Name.Visible = false
+    Draw.HealthBar.Visible = false
+    Draw.HealthFill.Visible = false
+    Draw.Distance.Visible = false
+end
+
+function TargetIndicator.SetTarget(player)
+    TargetIndicator.Target = player
+end
+
+function TargetIndicator.ClearTarget()
+    TargetIndicator.Target = nil
+end
+
+function TargetIndicator.SetVisible(bool)
+    TargetIndicator.Visible = bool
+end
+
+function TargetIndicator.Destroy()
+    for _, obj in pairs(Draw) do
+        obj:Remove()
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    local player = TargetIndicator.Target
+    if not TargetIndicator.Visible or not player or not player.Character then
+        Hide()
+        return
+    end
+
+    local char = player.Character
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then
+        Hide()
+        return
+    end
+
+    local screenPos = workspace.CurrentCamera:WorldToViewportPoint(root.Position)
+    local x = math.floor(screenPos.X + Card.Offset.X)
+    local y = math.floor(screenPos.Y + Card.Offset.Y)
+
+    Draw.Bg.Visible = true
+    Draw.Bg.Position = Vector2.new(x, y)
+    Draw.Bg.Size = Vector2.new(Card.Width, Card.Height)
+
+    Draw.Outline.Visible = true
+    Draw.Outline.Position = Vector2.new(x, y)
+    Draw.Outline.Size = Vector2.new(Card.Width, Card.Height)
+
+    local asset = GetHeadshot(player)
+    if asset then
+        if lastImage ~= asset then
+            Draw.Image.Image = asset
+            lastImage = asset
+        end
+        Draw.Image.Visible = true
+        Draw.Image.Position = Vector2.new(x + 4, y + 4)
+        Draw.Image.Size = Vector2.new(36, 36)
+    else
+        Draw.Image.Visible = false
+    end
+
+    Draw.Name.Visible = true
+    Draw.Name.Text = player.DisplayName
+    Draw.Name.Position = Vector2.new(x + 45, y + 4)
+
+    local health = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+    Draw.HealthBar.Visible = true
+    Draw.HealthBar.Position = Vector2.new(x + 45, y + 21)
+    Draw.HealthBar.Size = Vector2.new(Card.Width - 49, 4)
+    Draw.HealthFill.Visible = true
+    Draw.HealthFill.Position = Vector2.new(x + 45, y + 21)
+    Draw.HealthFill.Size = Vector2.new((Card.Width - 49) * health, 4)
+    Draw.HealthFill.Color = Color3.fromRGB(math.floor(255 * (1 - health)), math.floor(255 * health), 0)
+
+    local dist = (workspace.CurrentCamera.CFrame.Position - root.Position).Magnitude
+    Draw.Distance.Visible = true
+    Draw.Distance.Text = tostring(math.floor(dist)) .. "st"
+    Draw.Distance.Position = Vector2.new(x + 45, y + 27)
+end)
+
+return TargetIndicator
